@@ -104,6 +104,37 @@ Match the surrounding code. In practice that means:
   is looking for.
 - Errors say what was expected and what was found, and name the file or offset.
 
+## Cutting a release
+
+The version is never edited in the source. `cmd/djgyrofix/version.go` resolves it
+at run time, in descending order of authority:
+
+1. **A link-time stamp** — `-ldflags "-X main.stamped=$(git describe --tags)"`,
+   which both `make build` and the release workflow set.
+2. **The module version** Go records for `go install <pkg>@<version>`, which
+   carries no link flags but does know the tag it resolved.
+3. **The VCS revision** Go embeds for a build from a working tree, reported as
+   `devel+<commit>` or `devel+<commit>.dirty`.
+
+A development build says so rather than claiming to be a release. That matters
+because the version is written into every patch journal and is the first thing
+quoted in a bug report.
+
+So releasing is only a tag:
+
+```bash
+git tag -a v0.2.0 -m "djgyrofix 0.2.0"
+git push origin v0.2.0
+```
+
+The release workflow then runs the full test suite and the golden parity gate,
+cross-compiles all six targets, smoke-tests the linux binary end to end
+(scan → fix → verify → revert must restore a byte-exact file), **asserts that
+the binary reports the tag it was built from**, and publishes the archives with
+a `SHA256SUMS` file.
+
+Update `CHANGELOG.md` before tagging. Nothing else needs touching.
+
 ## Reporting a bug
 
 Open an issue with the output of `djgyrofix info --all-variants FILE` attached.

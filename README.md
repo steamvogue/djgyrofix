@@ -229,6 +229,19 @@ make            # fmt, vet, test, build
 
 `make dist` cross-compiles release binaries for all six target platforms.
 
+### Which build am I running?
+
+```bash
+djgyrofix version
+```
+
+The version is resolved from the build rather than hardcoded, so it cannot
+disagree with the release it came from. A release binary reports its tag
+(`0.1.0`); one built from a working tree reports the commit
+(`devel+a1b2c3d4e5f6`, with `.dirty` appended for uncommitted changes). Whatever
+it reports is also what gets written into every patch journal, so a journal
+always names the exact build that produced it.
+
 ## Commands
 
 | Command  | What it does |

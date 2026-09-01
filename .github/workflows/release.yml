@@ -74,9 +74,12 @@ jobs:
 
             mkdir -p "build/$name"
             # -trimpath keeps absolute build paths out of the binary, so anyone
-            # rebuilding this tag gets the same bytes.
+            # rebuilding this tag gets the same bytes. -X main.stamped is what
+            # makes `djgyrofix version` report the tag it was actually built
+            # from, rather than a number someone remembered to edit.
             CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
-              go build -trimpath -ldflags="-s -w" -o "build/$name/$binary" ./cmd/djgyrofix
+              go build -trimpath -ldflags="-s -w -X main.stamped=${TAG}" \
+                -o "build/$name/$binary" ./cmd/djgyrofix
 
             # set -e catches a failing compile, but not a compile that somehow
             # produces nothing. Publishing an archive containing no binary is
@@ -102,8 +105,18 @@ jobs:
         run: |
           set -euo pipefail
           bin="build/djgyrofix-${TAG}-linux-amd64/djgyrofix"
-          "$bin" version
           "$bin" help
+
+          # The binary must report the tag it was built from. A release that
+          # identifies itself wrongly poisons every journal it writes and every
+          # bug report quoting it.
+          reported=$("$bin" version)
+          expected="djgyrofix ${TAG#v}"
+          if [ "$reported" != "$expected" ]; then
+            echo "::error::version mismatch: binary says '$reported', tag implies '$expected'" >&2
+            exit 1
+          fi
+          echo "version stamp ok: $reported"
           # Generate a clip with known artifacts, then confirm the binary that
           # is about to be published finds them, patches them, and reverts byte
           # for byte. A release that cannot round-trip is not shippable.

@@ -22,13 +22,10 @@ import (
 	"os"
 )
 
-// Version is the tool version recorded in every journal.
-const Version = "0.1.0"
-
-// ToolName is what appears in journals and reports.
-const ToolName = "djgyrofix " + Version
-
-const usage = `djgyrofix ` + Version + ` — fix DJI gyro metadata artifacts in place
+// usage is a function rather than a constant because the version it names is
+// resolved at run time from the build stamp — see version.go.
+func usage() string {
+	return `djgyrofix ` + Version + ` — fix DJI gyro metadata artifacts in place
 
 usage: djgyrofix <command> [flags] <file...>
 
@@ -51,10 +48,11 @@ Typical use:
 Run "djgyrofix <command> -h" for the flags and examples of a command.
 Report bugs at https://github.com/steamvogue/djgyrofix/issues
 `
+}
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprint(os.Stderr, usage)
+		fmt.Fprint(os.Stderr, usage())
 		os.Exit(2)
 	}
 	command, args := os.Args[1], os.Args[2:]
@@ -74,10 +72,10 @@ func main() {
 		fmt.Println(ToolName)
 		return
 	case "help", "-h", "--help":
-		fmt.Print(usage)
+		fmt.Print(usage())
 		return
 	default:
-		fmt.Fprintf(os.Stderr, "djgyrofix: unknown command %q\n\n%s", command, usage)
+		fmt.Fprintf(os.Stderr, "djgyrofix: unknown command %q\n\n%s", command, usage())
 		os.Exit(2)
 	}
 	if err != nil {

@@ -3,18 +3,28 @@
 # There are no module requirements, so every target works offline.
 
 GO      ?= go
-VERSION ?= $(shell sed -n 's/^const Version = "\(.*\)"$$/\1/p' cmd/djgyrofix/main.go)
+
+# The version comes from git, never from a constant in the source. Two places
+# holding the same number drift, and the binary then reports a release it is
+# not. `git describe` yields the exact tag on a tagged commit and a
+# tag-commits-hash form anywhere else.
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo devel)
+LDFLAGS ?= -s -w -X main.stamped=$(VERSION)
 DIST    ?= dist
 
 # Platforms from the plan's CI matrix.
 PLATFORMS = linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
 
-.PHONY: all build test race cover vet fmt lint fuzz parity fixtures dist clean
+.PHONY: all build version test race cover vet fmt lint fuzz parity fixtures dist clean
 
 all: fmt vet test build
 
 build:
-	$(GO) build -o djgyrofix ./cmd/djgyrofix
+	$(GO) build -ldflags="$(LDFLAGS)" -o djgyrofix ./cmd/djgyrofix
+
+# What `make build` would stamp into the binary.
+version:
+	@echo $(VERSION)
 
 test:
 	$(GO) test ./...
@@ -61,7 +71,7 @@ dist:
 		if [ "$$os" = "windows" ]; then out=$$out.exe; fi; \
 		echo "building $$out"; \
 		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -trimpath \
-			-ldflags="-s -w" -o $$out ./cmd/djgyrofix || exit 1; \
+			-ldflags="$(LDFLAGS)" -o $$out ./cmd/djgyrofix || exit 1; \
 	done
 	@ls -l $(DIST)
 

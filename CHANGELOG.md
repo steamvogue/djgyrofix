@@ -6,6 +6,26 @@ Notable changes to djgyrofix. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] — 2026-09-01
+
+### Changed
+
+- **The version is resolved from the build instead of a source constant.** A
+  hardcoded version and a git tag are two places holding the same number, and
+  they drift the first time one is bumped without the other — leaving a binary
+  that misreports itself in every patch journal it writes. Release builds are
+  now stamped from the tag, `go install` picks up the module version, and a
+  build from a working tree reports its commit rather than claiming to be a
+  release.
+- The release workflow asserts that the binary reports the tag it was built
+  from, and refuses to publish if it does not.
+
+### Fixed
+
+- The release workflow now verifies each cross-compiled binary is non-empty
+  before archiving it. A compile that emitted nothing would previously have
+  produced a publishable archive containing no binary.
+
 ## [0.1.0] — 2026-09-01
 
 First release. A dependency-free Go rewrite of
@@ -53,5 +73,6 @@ byte-for-byte output parity against it in manual-range mode.
 - Writing a full copy of the video for every edit. `--out` keeps that behaviour
   where it is wanted.
 
-[Unreleased]: https://github.com/steamvogue/djgyrofix/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/steamvogue/djgyrofix/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/steamvogue/djgyrofix/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/steamvogue/djgyrofix/releases/tag/v0.1.0
