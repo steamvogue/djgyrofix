@@ -27,8 +27,9 @@ deviations in DJI MP4/MOV metadata, in place, with exact revert.
 - The predicted residual reduction is printed on a dry run, where it was
   already computed and then discarded.
 
-See the [0.3.0 changelog](CHANGELOG.md#030--2026-09-01) for every user-visible
-change. The 0.2.0 detector rework is
+The current release is 0.3.1, which is 0.3.0 with a lint-gate fix and no
+functional change. See the [0.3.0 changelog](CHANGELOG.md#030--2026-09-01) for
+every user-visible change. The 0.2.0 detector rework is
 [recorded there too](CHANGELOG.md#020--2026-09-01); the superseded
 implementation remains on `study`, and every push to `main` publishes
 downloadable Windows builds.
@@ -250,8 +251,8 @@ page. Open the newest successful run, scroll to **Artifacts**, and download
 
 ```bash
 # Linux / macOS
-tar xzf djgyrofix-v0.3.0-linux-amd64.tar.gz
-sudo install djgyrofix-v0.3.0-linux-amd64/djgyrofix /usr/local/bin/
+tar xzf djgyrofix-v0.3.1-linux-amd64.tar.gz
+sudo install djgyrofix-v0.3.1-linux-amd64/djgyrofix /usr/local/bin/
 djgyrofix version
 ```
 
@@ -289,7 +290,7 @@ djgyrofix version
 
 The version is resolved from the build rather than hardcoded, so it cannot
 disagree with the release it came from. A release binary reports its tag
-(`0.3.0`); one built from a working tree reports the commit
+(`0.3.1`); one built from a working tree reports the commit
 (`devel+a1b2c3d4e5f6`, with `.dirty` appended for uncommitted changes). Whatever
 it reports is also what gets written into every patch journal, so a journal
 always names the exact build that produced it.
@@ -499,7 +500,7 @@ sidecar journal instead:
 // DJI_0042.MP4.gyrofix.json
 {
   "version": 1,
-  "tool": "djgyrofix 0.3.0",
+  "tool": "djgyrofix 0.3.1",
   "source":   { "name": "DJI_0042.MP4", "size": 21474836480, "mtime": "..." },
   "track":    { "variant": "wm169", "timescale": 1000, "samples": 36012 },
   "metadata_digest": "sha256:...",   // djmd sample bytes only, pre-patch
