@@ -1,0 +1,72 @@
+name: Main branch builds
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: verify main
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.25'
+          check-latest: true
+          cache: false
+      - run: gofmt -w cmd internal tools
+      - name: require clean formatting
+        run: git diff --exit-code
+      - run: go vet ./...
+      - run: go test ./...
+
+  windows:
+    name: Windows ${{ matrix.goarch }}
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.25'
+          check-latest: true
+          cache: false
+
+      - name: build
+        shell: bash
+        env:
+          CGO_ENABLED: '0'
+          GOOS: windows
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          short_sha="${GITHUB_SHA:0:7}"
+          mkdir -p artifact
+          go build -trimpath \
+            -ldflags="-s -w -X main.stamped=${GITHUB_REF_NAME}-${short_sha}" \
+            -o artifact/djgyrofix.exe ./cmd/djgyrofix
+          test -s artifact/djgyrofix.exe
+          cp README.md LICENSE CHANGELOG.md artifact/
+          (cd artifact && sha256sum djgyrofix.exe > SHA256SUMS)
+
+      - name: upload downloadable build
+        uses: actions/upload-artifact@v7
+        with:
+          name: djgyrofix-${{ github.ref_name }}-windows-${{ matrix.goarch }}
+          path: artifact/
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 9

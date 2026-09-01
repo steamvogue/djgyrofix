@@ -1,6 +1,7 @@
 # djgyrofix
 
 [![CI](https://github.com/steamvogue/djgyrofix/actions/workflows/ci.yml/badge.svg)](https://github.com/steamvogue/djgyrofix/actions/workflows/ci.yml)
+[![Main branch builds](https://github.com/steamvogue/djgyrofix/actions/workflows/development-build.yml/badge.svg)](https://github.com/steamvogue/djgyrofix/actions/workflows/development-build.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/steamvogue/djgyrofix.svg)](https://pkg.go.dev/github.com/steamvogue/djgyrofix)
 [![Go Report Card](https://goreportcard.com/badge/github.com/steamvogue/djgyrofix)](https://goreportcard.com/report/github.com/steamvogue/djgyrofix)
 [![License: GPL v3](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
@@ -70,7 +71,11 @@ come from that work.
 
 djgyrofix is a Go port and rework of it: a CLI instead of a GUI, automatic
 detection instead of hand-picked time ranges, and in-place patching with exact
-revert instead of writing a full copy. It is held to
+revert instead of writing a full copy. The current transient detector was rebuilt
+after testing the first implementation against the supplied DJI footage. That historical
+implementation remains on the `study` branch; `main` contains the validated
+detector and correction pipeline described below and in
+[the measured findings](docs/FINDINGS.md). It is held to
 [byte-for-byte parity](#golden-parity) with the original, which is the clearest
 way to say that the credit belongs upstream.
 
@@ -191,10 +196,17 @@ which would destroy the cheapest validation available — see
 
 ### Download a binary
 
-Grab an archive for your platform from the
+Tagged, stable archives are on the
 [releases page](https://github.com/steamvogue/djgyrofix/releases). Builds are
 published for Linux, macOS and Windows on both amd64 and arm64, with a
 `SHA256SUMS` file alongside them.
+
+Every push to `main` also produces fresh Windows amd64 and arm64 bundles on the
+[Main branch builds](https://github.com/steamvogue/djgyrofix/actions/workflows/development-build.yml)
+page. Open the newest successful run, scroll to **Artifacts**, and download
+`djgyrofix-main-windows-amd64` for an ordinary Intel/AMD Windows PC. These are
+30-day development artifacts rather than tagged releases; each bundle contains
+`djgyrofix.exe`, its checksum, the README, licence and changelog.
 
 ```bash
 # Linux / macOS
@@ -432,7 +444,7 @@ Each of these has a test that fails if it is broken, in
 
 ### Real-footage validation
 
-The `rebirth` pipeline is exercised against a real 6.5 GB DJI clip — 8m17s of
+The current pipeline is exercised against a real 6.5 GB DJI clip — 8m17s of
 59.94 fps video with 993,523 quaternions at 1978 Hz, three tracks (`hvc1` video,
 `djmd` metadata, `dbgi` debug), wm169 layout.
 
@@ -450,6 +462,12 @@ a return near the pre-entry trajectory, and a settled continuation rejects all
 17 on this clip as real rapid motion rather than bridgeable corruption. In
 particular, the continuous burst around 257.2 seconds is smoothed as one jitter
 region instead of reconstructed as a dozen dropouts.
+
+This result changed the model behind the tool: the observed defect is not best
+described as generic high-frequency gyro noise. It is a fast but comparatively
+low-frequency, out-of-sync attitude response around sharp vector changes. The
+full measurements, rejected hypotheses and implementation consequences are in
+[Real-footage findings](docs/FINDINGS.md).
 
 Real footage is not committed — it is gigabytes, and the repository has to stay
 cloneable. Everything in `make test` runs against generated fixtures.
@@ -564,9 +582,11 @@ They are different problems and it is entirely reasonable to need both.
   metadata sample's timestamp span, and no per-quaternion timestamp field is
   known in the DJI schema. If one exists, finding it would improve everything
   downstream.
-- **Threshold defaults are calibrated against synthetic fixtures**, not a corpus
-  of real footage with known-bad sections. Start with `--profile conservative`
-  and a dry run on material you care about.
+- **Threshold defaults have one full real-footage validation, not a broad
+  labelled corpus.** Synthetic fixtures cover controlled cases, and the 6.5 GB
+  clip in [the findings](docs/FINDINGS.md) exercises the complete patch, rescan,
+  verify and revert path. Start with `--profile conservative` and a dry run on
+  material you care about.
 
 ## Licence
 

@@ -5,7 +5,8 @@ behind the unusual choices — no ffmpeg, no protobuf codegen, no math library �
 is worth having written down.
 
 **It is the plan, not the record.** A few things looked different once they were
-built and measured, and the implementation is the authority where they disagree:
+built and measured. The implementation and [real-footage findings](FINDINGS.md)
+are the authority where they disagree:
 
 - **§5.2 overstates the failure mode of the reference's global baseline.** The
   plan says one rough segment in a long flight hides everything else. In fact
@@ -26,12 +27,15 @@ built and measured, and the implementation is the authority where they disagree:
   as needing verification against Gyroflow's parser for units, axis convention
   and orientation string. That verification has not happened, and shipping an
   unverified guess would be worse than shipping nothing.
-- **§5.1 and §6.2 were replaced on the `rebirth` branch.** The reported defect
+- **§5.1 and §6.2 were replaced after real-footage validation.** The reported defect
   is a damped, low-frequency attitude overshoot around sharp vector changes,
   not necessarily high-frequency sensor noise. Detection now compares angular
   velocity with a ±60 ms local trend, and confirmed events receive an explicit
   correction floor with smooth exterior shoulders. Corrupt samples are bridged
   into the working series before it is filtered.
+- **The first implementation is preserved on `study`; the replacement is on
+  `main`.** The branch boundary makes the earlier assumptions reproducible
+  without leaving production builds on the superseded detector.
 - **Milestone estimates were for a human.** Ignore them.
 
 The plan as written follows.
