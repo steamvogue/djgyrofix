@@ -312,6 +312,11 @@ underneath you.
 This is strictly better than a full backup copy for the common case, and costs
 kilobytes.
 
+> **Measured:** on a real 6.5 GB clip with 98 detected events this comes to
+> 335,761 writes and a 28 MB journal — 0.4% of the file, not kilobytes. The
+> trade still holds overwhelmingly (11 s to patch, 1.3 s to revert, against
+> copying 6.5 GB), but the plan understated the size for a long, busy clip.
+
 ### 7.2 Backup strategy
 
 | Mode | Behaviour |

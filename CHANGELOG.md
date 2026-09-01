@@ -18,7 +18,9 @@ byte-for-byte output parity against it in manual-range mode.
   run unless `--apply` is given.
 - **In-place patching with exact revert.** The patch is size-preserving, so a
   sidecar journal recording every four-byte write is enough to restore the
-  original file bit for bit — no need to duplicate a 20 GB video to enable undo.
+  original file bit for bit — no need to duplicate a multi-gigabyte video to
+  enable undo. Measured on a real 6.5 GB clip: 11 s to patch, 1.3 s to revert,
+  28 MB of journal.
   The upstream tool has neither in-place patching nor revert.
 - **Automatic detection**, replacing the original's hand-picked time ranges.
   Angular-velocity residual as the discriminator, a sliding Hampel window for

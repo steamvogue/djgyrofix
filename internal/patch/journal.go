@@ -1,10 +1,14 @@
 // Package patch applies size-preserving byte writes to a video and records
 // enough to undo them exactly.
 //
-// The patch is tiny — a few thousand four-byte writes against a file that may
-// be tens of gigabytes — so duplicating the file to enable undo is the wrong
-// trade. A sidecar journal recording (offset, old bytes, new bytes) costs
-// kilobytes and restores bit-exact original state in milliseconds.
+// The patch is small relative to the video — a few hundred thousand four-byte
+// writes against a file that may be tens of gigabytes — so duplicating the file
+// to enable undo is the wrong trade. A sidecar journal recording (offset, old
+// bytes, new bytes) restores bit-exact original state in about a second.
+//
+// Measured on a real 6.5 GB clip with 98 detected events: 335,761 writes, a
+// 28 MB journal, 11 s to patch and 1.3 s to revert. That is 0.4% of the file
+// size, against 100% for a full copy.
 package patch
 
 import (

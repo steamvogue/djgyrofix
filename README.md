@@ -348,9 +348,9 @@ for jitter.
 
 ### The patch journal
 
-The patch is size-preserving and tiny — a few thousand four-byte writes at most
-— so duplicating a 20 GB file to enable undo is the wrong trade. `djgyrofix`
-writes a sidecar journal instead:
+The patch is size-preserving and small relative to the video, so duplicating a
+multi-gigabyte file to enable undo is the wrong trade. `djgyrofix` writes a
+sidecar journal instead:
 
 ```jsonc
 // DJI_0042.MP4.gyrofix.json
@@ -374,7 +374,7 @@ rewrite does not invalidate a journal while any change to the patched data does.
 
 | Mode | Behaviour |
 |------|-----------|
-| `--backup journal` | **Default.** Sidecar journal only. Instant, kilobytes. |
+| `--backup journal` | **Default.** Sidecar journal only. Roughly 0.4% of the video size on heavily-patched footage, far less on a clean clip. |
 | `--backup copy` | Full `.orig` copy first. Uses `clonefile` on APFS via `cp -c`, and `copy_file_range` on Linux, which the kernel turns into a reflink on btrfs and XFS. |
 | `--backup none` | No undo. Requires `--force`. |
 | `--out FILE` | Original untouched; a patched copy is written instead. |
@@ -409,6 +409,28 @@ Each of these has a test that fails if it is broken, in
 `cmd/djgyrofix/e2e_test.go`.
 
 ## Testing
+
+### Verified on real footage
+
+Everything below is also exercised against a real 6.5 GB DJI clip — 8m17s of
+59.94 fps video with 993,523 quaternions at 1978 Hz, three tracks (`hvc1`
+video, `djmd` metadata, `dbgi` debug), wm169 layout.
+
+| Step | Result |
+|------|--------|
+| `info` | Selected the `djmd` track over the decoy `dbgi` track, sniffed wm169, 33.33 quaternions per sample |
+| `scan` | 98 events in 9.3 s — 69 jitter, 17 dropout, 12 impact, 5.9% of the clip affected |
+| `fix --apply` | 84,133 quaternions in 2,609 samples, 335,761 four-byte writes, 11.4 s |
+| `verify` | All 335,761 ranges correct, digest ok, size unchanged, 0.9 s |
+| `revert` | 1.3 s, and `sha256sum` matched the original exactly |
+
+The dropouts are the notable part: the plausibility gate found 17 runs of
+physically impossible samples in a real recording. That is the failure mode this
+tool exists for, and it is not something the synthetic fixtures could have
+proven.
+
+Real footage is not committed — it is gigabytes, and the repository has to stay
+cloneable. Everything in `make test` runs against generated fixtures.
 
 ```bash
 make test      # unit, property and end-to-end tests
