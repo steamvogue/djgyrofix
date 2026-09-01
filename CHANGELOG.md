@@ -6,6 +6,87 @@ Notable changes to djgyrofix. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-09-01
+
+This release replaces the first automatic-correction model after validating it
+end to end on the supplied 6.57 GB DJI clip. The observed problem is a fast but
+comparatively low-frequency, out-of-sync attitude response around sharp vector
+changes, not simply generic high-frequency gyro noise.
+
+### Added
+
+- **Bounded correction rescans.** Automatic correction now rescans its
+  float32-quantized result for at most three passes. Residual events near an
+  authorized region can be corrected again; newly exposed smoothing regions
+  can join only while their union remains below `--max-affected`. Newly detected
+  dropouts are never reconstructed automatically during a later pass.
+- `scan` performs the same bounded analysis as `fix`, so its event list and
+  dry-run write estimate predict the correction that will actually be applied.
+- Synthetic `vector-change` and `vector-jitter` fixtures cover clean sharp
+  changes separately from the damped out-of-sync response.
+- [Real-footage findings](https://github.com/steamvogue/djgyrofix/blob/v0.2.0/docs/FINDINGS.md)
+  record the rejected hypotheses,
+  implementation consequences, measured full-clip result and limits of the
+  evidence.
+- Every push to `main` publishes 30-day Windows amd64 and arm64 artifacts,
+  including checksums and documentation. Tagged releases still publish all six
+  Linux, macOS and Windows targets.
+- The former `main` implementation is preserved on the `study` branch for
+  reproducible comparison; `main` and `rebirth` carry the replacement.
+
+### Changed
+
+- **Detection targets transient deviations rather than only high-frequency
+  content.** Angular velocity is now compared with a ±60 ms local trend instead
+  of ±12 ms. The residual exposes overshoot and damped ringing while the
+  motion-ratio gate keeps intentional rapid movement distinct.
+- **Confirmed events receive a stable correction core.** Detection confidence
+  supplies a non-zero floor across the complete event, peak excess may raise the
+  whole core to full correction, and fixed exterior shoulders taper smoothly.
+  This removes the old near-threshold under-correction and avoids introducing
+  blend steps at 10 ms bin boundaries.
+- Bridges are applied to one working quaternion series before that series is
+  smoothed, so overlapping bridge and jitter corrections share corrected
+  boundaries instead of composing against stale input.
+- Reports now say `transient residual` rather than `high-frequency residual`,
+  matching what the score actually measures.
+
+### Fixed
+
+- Over-full-scale transition pairs are bridgeable only when the second edge is
+  opposing, returns near the pre-entry orientation and is followed by a settled
+  continuation. Genuine impacts and continuous oscillation are no longer
+  reconstructed as telemetry dropouts.
+- Event end times are clamped to the last quaternion timestamp. A report can
+  therefore be fed back through `--ranges` even when an event reaches the end of
+  the track.
+- A bridge inside a smoothing event no longer interpolates from the original
+  unsmoothed neighbours, which could create a fresh boundary discontinuity.
+- Exported scorer documentation now passes the same `revive` lint gate used by
+  release CI.
+
+### Performance
+
+- Before/after angular acceleration is normalized and differentiated once per
+  track. Event scores query the prepared indexed series instead of traversing
+  all quaternions for every event, removing the events × quaternions scaling
+  cost seen on long clips.
+
+### Validation
+
+- The supplied 497.26-second clip contains 993,523 quaternions at 1978 Hz. The
+  bounded analysis reports 85 events (73 jitter, 12 impact, 0 dropout), including
+  three regions exposed during correction, and affects 30.6828375 seconds
+  (6.1703%).
+- Correction changes 102,824 quaternions in 3,164 metadata samples through
+  411,268 four-byte writes and reduces the transient score by 91.598%.
+- A rescan of the patched copy reports no events. Verification passes every
+  range, the metadata digest and the unchanged 6,570,736,456-byte file size;
+  revert compares byte-identical with the original.
+- CI covers Linux, macOS and Windows tests and race tests, all six cross-builds,
+  lint, both parser fuzz targets and byte-for-byte golden parity with the Python
+  reference.
+
 ## [0.1.1] — 2026-09-01
 
 ### Changed
@@ -73,6 +154,7 @@ byte-for-byte output parity against it in manual-range mode.
 - Writing a full copy of the video for every edit. `--out` keeps that behaviour
   where it is wanted.
 
-[Unreleased]: https://github.com/steamvogue/djgyrofix/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/steamvogue/djgyrofix/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/steamvogue/djgyrofix/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/steamvogue/djgyrofix/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/steamvogue/djgyrofix/releases/tag/v0.1.0

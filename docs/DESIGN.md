@@ -310,7 +310,7 @@ So instead of duplicating a 20 GB file to enable undo, write a sidecar journal:
 // DJI_0042.MP4.gyrofix.json
 {
   "version": 1,
-  "tool": "djgyrofix 0.1.0",
+  "tool": "djgyrofix 0.2.0",
   "created": "2026-08-31T10:14:22Z",
   "source": { "name": "DJI_0042.MP4", "size": 21474836480, "mtime": "..." },
   "track": { "variant": "wm169", "timescale": 1000, "samples": 36012 },

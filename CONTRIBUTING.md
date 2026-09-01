@@ -123,8 +123,8 @@ quoted in a bug report.
 So releasing is only a tag:
 
 ```bash
-git tag -a v0.2.0 -m "djgyrofix 0.2.0"
-git push origin v0.2.0
+git tag -a v0.3.0 -m "djgyrofix 0.3.0"
+git push origin v0.3.0
 ```
 
 The release workflow then runs the full test suite and the golden parity gate,

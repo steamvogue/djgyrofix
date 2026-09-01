@@ -9,6 +9,27 @@
 A dependency-free Go CLI that detects and corrects transient attitude
 deviations in DJI MP4/MOV metadata, in place, with exact revert.
 
+## What's new in 0.2.0
+
+- Detection now models fast, comparatively low-frequency overshoot and ringing
+  around sharp motion-vector changes instead of assuming all artifacts are
+  generic high-frequency gyro noise.
+- Confirmed events get a stable correction floor, smooth exterior shoulders and
+  up to three bounded rescan passes, eliminating the residual cluster left by
+  the first implementation.
+- Dropout reconstruction now requires a verified return to the pre-entry
+  trajectory and a settled continuation, keeping genuine rapid motion intact.
+- Bridges and smoothing operate on the same working series, event bounds remain
+  valid at the end of a track, and per-event quality scoring no longer rescans
+  the complete quaternion track.
+- The full 6.57 GB sample now rescans with no events after correction and reverts
+  byte-identically. See [the measured findings](docs/FINDINGS.md).
+- Every push to `main` publishes downloadable Windows builds. The superseded
+  implementation remains on `study`; `main` contains the validated approach.
+
+See the [0.2.0 changelog](CHANGELOG.md#020--2026-09-01) for every user-visible,
+safety, performance, validation and release change.
+
 ## Why this exists
 
 If you fly FPV with a DJI air unit, you may have hit this: the raw footage looks
@@ -210,8 +231,8 @@ page. Open the newest successful run, scroll to **Artifacts**, and download
 
 ```bash
 # Linux / macOS
-tar xzf djgyrofix-v0.1.0-linux-amd64.tar.gz
-sudo install djgyrofix-v0.1.0-linux-amd64/djgyrofix /usr/local/bin/
+tar xzf djgyrofix-v0.2.0-linux-amd64.tar.gz
+sudo install djgyrofix-v0.2.0-linux-amd64/djgyrofix /usr/local/bin/
 djgyrofix version
 ```
 
@@ -249,7 +270,7 @@ djgyrofix version
 
 The version is resolved from the build rather than hardcoded, so it cannot
 disagree with the release it came from. A release binary reports its tag
-(`0.1.0`); one built from a working tree reports the commit
+(`0.2.0`); one built from a working tree reports the commit
 (`devel+a1b2c3d4e5f6`, with `.dirty` appended for uncommitted changes). Whatever
 it reports is also what gets written into every patch journal, so a journal
 always names the exact build that produced it.
@@ -388,7 +409,7 @@ sidecar journal instead:
 // DJI_0042.MP4.gyrofix.json
 {
   "version": 1,
-  "tool": "djgyrofix 0.1.0",
+  "tool": "djgyrofix 0.2.0",
   "source":   { "name": "DJI_0042.MP4", "size": 21474836480, "mtime": "..." },
   "track":    { "variant": "wm169", "timescale": 1000, "samples": 36012 },
   "metadata_digest": "sha256:...",   // djmd sample bytes only, pre-patch

@@ -186,10 +186,22 @@ jobs:
           this tool can and cannot fix, and \`scan\` will often tell you the
           problem is your camera mounting rather than the metadata.
 
-          ## What changed
-
-          See the [changelog](https://github.com/steamvogue/djgyrofix/blob/${TAG}/CHANGELOG.md).
           NOTES
+
+          {
+            echo '## What changed'
+            echo
+            awk -v version="${TAG#v}" '
+              index($0, "## [" version "]") == 1 { copying = 1; next }
+              copying && /^## \[/ { exit }
+              copying { print }
+              END { if (!copying) exit 1 }
+            ' CHANGELOG.md
+            cat <<NOTES
+
+          Full history: [CHANGELOG.md](https://github.com/steamvogue/djgyrofix/blob/${TAG}/CHANGELOG.md).
+          NOTES
+          } >> notes.md
           echo "notes prepared"
 
       - name: publish
