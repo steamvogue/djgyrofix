@@ -26,6 +26,8 @@ jobs:
         with:
           go-version: '1.25'
           check-latest: true
+          # No go.sum to key a module cache on: this tool has no dependencies.
+          cache: false
       - run: go vet ./...
       - run: go test ./...
       - uses: actions/setup-python@v7
@@ -58,6 +60,8 @@ jobs:
         with:
           go-version: '1.25'
           check-latest: true
+          # No go.sum to key a module cache on: this tool has no dependencies.
+          cache: false
 
       - name: build
         id: build

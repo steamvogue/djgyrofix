@@ -28,6 +28,8 @@ jobs:
         with:
           go-version: '1.25'
           check-latest: true
+          # No go.sum to key a module cache on: this tool has no dependencies.
+          cache: false
       - name: gofmt
         if: runner.os != 'Windows'
         run: |
@@ -53,6 +55,8 @@ jobs:
         with:
           go-version: '1.25'
           check-latest: true
+          # No go.sum to key a module cache on: this tool has no dependencies.
+          cache: false
       - uses: golangci/golangci-lint-action@v9
         with:
           version: v2.13.2
@@ -71,6 +75,8 @@ jobs:
         with:
           go-version: '1.25'
           check-latest: true
+          # No go.sum to key a module cache on: this tool has no dependencies.
+          cache: false
       - name: build
         env:
           CGO_ENABLED: '0'
@@ -87,6 +93,8 @@ jobs:
         with:
           go-version: '1.25'
           check-latest: true
+          # No go.sum to key a module cache on: this tool has no dependencies.
+          cache: false
       # Both parsers walk length fields taken straight from the file, so a
       # short fuzz run on every change is cheap insurance against a panic or an
       # unbounded allocation on a corrupt clip.
@@ -102,6 +110,8 @@ jobs:
         with:
           go-version: '1.25'
           check-latest: true
+          # No go.sum to key a module cache on: this tool has no dependencies.
+          cache: false
       - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
