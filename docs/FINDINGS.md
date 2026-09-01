@@ -215,6 +215,59 @@ VILLA2 is the useful control: a clip its owner considers normal now yields a
 single 86 ms event over 228 seconds. Before the duplication was handled it
 yielded two events and an apparent floor of 10.5 °/s.
 
+## What the reference does, and what it shares
+
+The Python reference, `kim2160/DJIGyroFix` v0.92, was re-read after the
+duplication was found. Two things came out of it.
+
+**It carries the same blind spot.** `gyrofix/detection.py` computes velocity the
+way this port did until 0.5.0:
+
+```python
+for index in range(1, len(quaternions)):
+    velocities.append(_rotation_velocity(
+        quaternions[index - 1], quaternions[index], ...))
+```
+
+Consecutive stored samples, so the same square wave at Nyquist. Its detection
+runs over a hand-picked window rather than a whole file, which limits the blast
+radius, but the residual it measures inside that window is contaminated the same
+way.
+
+**Its quality metric is almost entirely the duplication.**
+`angular_acceleration_score` differences consecutive normalized quaternions and
+takes the median of the result. On the real clip that metric reads:
+
+| Window | As stored | Duplicates dropped | Share that was the repeats |
+|---|---|---|---|
+| Whole clip | 2469.5 | 6.8 | 99.7% |
+| 79-81 s | 12030.3 | 23.1 | 99.8% |
+| Quiet stretch, 300-310 s | 2762.6 | 7.6 | 99.7% |
+
+Smoothing removes the stair-step whether or not it removes any jitter, so the
+score falls dramatically either way. That is how a run could report a 91.6%
+reduction and look identical in Gyroflow: the number was real, and it was
+measuring an achievement nobody could see.
+
+The reported figures are now measured on distinct orientations, with one index
+mask taken from the before-series and applied to both so they share a time grid.
+`correct.AngularAccelerationScore` keeps the reference's exact behaviour,
+because the golden fixtures pin it. Honest numbers on the two real clips:
+
+| Clip | In corrected regions | Clip-wide |
+|---|---|---|
+| RAW | 91.4% | 9.8% |
+| VILLA2 | 99.3% | 0.1% |
+
+**What is actually shared.** The reference is a three-pass box blur over the
+quaternion components inside a user-selected range, with smoothstep edge
+blending back to the source at the boundaries and an optional strength slerp.
+That correction core is what this port holds byte-for-byte parity with, and it
+still does: 72 of 72 cases pass against v0.92 after every change described in
+this document. Everything else here — whole-file detection, the plausibility
+gate, dropout bridging, the weight envelope, the bounded rescans, the diagnosis
+— is this port's, and none of it is covered by that parity.
+
 ## Scope of the evidence
 
 This is two real clips plus generated fixtures designed to isolate clean

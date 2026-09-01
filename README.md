@@ -275,8 +275,8 @@ page. Open the newest successful run, scroll to **Artifacts**, and download
 
 ```bash
 # Linux / macOS
-tar xzf djgyrofix-v0.5.0-linux-amd64.tar.gz
-sudo install djgyrofix-v0.5.0-linux-amd64/djgyrofix /usr/local/bin/
+tar xzf djgyrofix-v0.5.1-linux-amd64.tar.gz
+sudo install djgyrofix-v0.5.1-linux-amd64/djgyrofix /usr/local/bin/
 djgyrofix version
 ```
 
@@ -314,7 +314,7 @@ djgyrofix version
 
 The version is resolved from the build rather than hardcoded, so it cannot
 disagree with the release it came from. A release binary reports its tag
-(`0.5.0`); one built from a working tree reports the commit
+(`0.5.1`); one built from a working tree reports the commit
 (`devel+a1b2c3d4e5f6`, with `.dirty` appended for uncommitted changes). Whatever
 it reports is also what gets written into every patch journal, so a journal
 always names the exact build that produced it.
@@ -607,7 +607,7 @@ sidecar journal instead:
 // DJI_0042.MP4.gyrofix.json
 {
   "version": 1,
-  "tool": "djgyrofix 0.5.0",
+  "tool": "djgyrofix 0.5.1",
   "source":   { "name": "DJI_0042.MP4", "size": 21474836480, "mtime": "..." },
   "track":    { "variant": "wm169", "timescale": 1000, "samples": 36012 },
   "metadata_digest": "sha256:...",   // djmd sample bytes only, pre-patch

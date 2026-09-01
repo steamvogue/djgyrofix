@@ -667,8 +667,27 @@ func collapseWrites(writes []patch.Write) []patch.Write {
 
 // scoreEvents measures the residual reduction two ways: over the corrected
 // regions, and over the whole clip.
-// Averaging over the whole clip would dilute a real improvement to nothing.
+//
+// The in-region figure was the only one reported at first, on the reasoning
+// that a clip-wide average dilutes a real improvement to nothing. That reading
+// was backwards. It cannot fall where detection never looked, so it is at its
+// most flattering exactly when detection has under-covered — which is the one
+// case a pilot needs to be told about.
+//
+// Both are measured on distinct orientations rather than on stored samples.
+// The metric is the reference's median angular acceleration, and on a stream
+// where DJI has written every attitude twice it is overwhelmingly a measure of
+// that: on the real clip it read 2469.5 as stored against 6.8 with the repeats
+// dropped, so 99.7% of it was the duplication. Smoothing removes the stair-step
+// whether or not it removes any jitter, which is how a run could report a 91.6%
+// reduction and look identical in Gyroflow.
+//
+// The mask comes from the before-series and is applied to both, so the two are
+// compared on one time grid. correct.AngularAccelerationScore keeps the
+// reference's exact behaviour for golden parity and is not affected.
 func scoreEvents(times []float64, before, after []quat.Q, events []detect.Event) (float64, float64, float64, float64) {
+	times, before, after = distinctOrientations(times, before, after)
+
 	beforeScorer, err := correct.PrepareAngularAcceleration(times, before)
 	if err != nil {
 		return 0, 0, 0, 0
@@ -704,6 +723,26 @@ func scoreEvents(times []float64, before, after []quat.Q, events []detect.Event)
 		return 0, 0, clipBefore, clipAfter
 	}
 	return weightedBefore / total, weightedAfter / total, clipBefore, clipAfter
+}
+
+// distinctOrientations drops the samples DJI wrote twice, keeping one index
+// mask derived from the uncorrected series and applying it to both. Correction
+// smooths the repeats apart, so a mask taken per-series would compare a
+// half-rate before against a full-rate after and read the difference in
+// sampling as a difference in quality.
+func distinctOrientations(times []float64, before, after []quat.Q) ([]float64, []quat.Q, []quat.Q) {
+	keptTimes := make([]float64, 0, len(times))
+	keptBefore := make([]quat.Q, 0, len(before))
+	keptAfter := make([]quat.Q, 0, len(after))
+	for index := range before {
+		if index > 0 && before[index] == before[index-1] {
+			continue
+		}
+		keptTimes = append(keptTimes, times[index])
+		keptBefore = append(keptBefore, before[index])
+		keptAfter = append(keptAfter, after[index])
+	}
+	return keptTimes, keptBefore, keptAfter
 }
 
 func paramsMap(params detect.Params, opts *options) map[string]any {

@@ -6,6 +6,24 @@ Notable changes to djgyrofix. The format follows
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-09-01
+
+### Fixed
+
+- **The reported residual reduction was almost entirely measuring DJI's
+  duplicated samples.** The metric is the reference's median angular
+  acceleration, differenced across stored samples, and on the real clip 99.7% of
+  it was the duplication stair-step (2469.5 as stored, 6.8 with the repeats
+  dropped). A box blur removes that stair-step whether or not it removes any
+  jitter, so a run could report 91.6% and look identical in Gyroflow.
+
+  Reported figures are now measured on distinct orientations, with one index
+  mask taken from the before-series and applied to both so the two share a time
+  grid. On the real clip that reads 91.4% inside the corrected regions and 9.8%
+  clip-wide; on a clip considered normal, 99.3% and 0.1%.
+  `correct.AngularAccelerationScore` keeps the reference's exact behaviour,
+  because the golden fixtures pin it, and golden parity still passes 72 of 72.
+
 ## [0.5.0] — 2026-09-01
 
 A viewer reported that a patched file changed nothing in Gyroflow. Checking
@@ -317,7 +335,8 @@ byte-for-byte output parity against it in manual-range mode.
 - Writing a full copy of the video for every edit. `--out` keeps that behaviour
   where it is wanted.
 
-[Unreleased]: https://github.com/steamvogue/djgyrofix/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/steamvogue/djgyrofix/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/steamvogue/djgyrofix/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/steamvogue/djgyrofix/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/steamvogue/djgyrofix/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/steamvogue/djgyrofix/compare/v0.3.1...v0.3.2
