@@ -185,13 +185,10 @@ func nearestIndex(times []float64, target float64) int {
 	return best
 }
 
-// AngularAccelerationScore is the median absolute angular acceleration inside a
-// window, in degrees per second squared expressed in radians per second — the
-// reference's before/after quality metric, ported unchanged so the reported
-// improvement percentage matches.
 // AccelerationScorer normalizes and differentiates one quaternion track once.
-// Individual event scores then inspect only the accelerations in that event,
-// rather than traversing the full track again.
+// Individual event scores inspect only the accelerations in that event rather
+// than traversing the full track again. Score retains the reference's quality
+// metric so the reported before/after improvement percentage remains comparable.
 type AccelerationScorer struct {
 	leftTimes  []float64
 	rightTimes []float64
