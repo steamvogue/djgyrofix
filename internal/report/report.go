@@ -353,8 +353,28 @@ func wrapIndent(text string, width int, indent string) string {
 		}
 		current += " " + word
 	}
-	return strings.Join(append(lines, current), "\n"+indent)
+	lines = append(lines, current)
+
+	// A greedy fill can leave a stub on the last line — one word, or a lone
+	// "(30.00 s)" — which reads as a rendering fault rather than as a wrap.
+	// Pulling a word down from the line above costs a little raggedness and
+	// removes the widow.
+	if len(lines) > 1 {
+		last := lines[len(lines)-1]
+		previous := lines[len(lines)-2]
+		if len([]rune(last)) <= widowWidth {
+			if cut := strings.LastIndex(previous, " "); cut > 0 {
+				lines[len(lines)-2] = previous[:cut]
+				lines[len(lines)-1] = previous[cut+1:] + " " + last
+			}
+		}
+	}
+	return strings.Join(lines, "\n"+indent)
 }
+
+// widowWidth is how short a trailing line has to be before it is worth
+// reflowing the line above to avoid it.
+const widowWidth = 12
 
 // joinUnits reattaches a bare unit to the number in front of it, so a wrap
 // cannot leave "113.9" at the end of one line and "°/s" at the start of the

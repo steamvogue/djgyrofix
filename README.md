@@ -27,8 +27,8 @@ deviations in DJI MP4/MOV metadata, in place, with exact revert.
 - The predicted residual reduction is printed on a dry run, where it was
   already computed and then discarded.
 
-The current release is 0.3.1, which is 0.3.0 with a lint-gate fix and no
-functional change. See the [0.3.0 changelog](CHANGELOG.md#030--2026-09-01) for
+The current release is 0.3.2, which is 0.3.0 plus two fixes to the diagnosis
+found by running it on real footage. See the [0.3.0 changelog](CHANGELOG.md#030--2026-09-01) for
 every user-visible change. The 0.2.0 detector rework is
 [recorded there too](CHANGELOG.md#020--2026-09-01); the superseded
 implementation remains on `study`, and every push to `main` publishes
@@ -251,8 +251,8 @@ page. Open the newest successful run, scroll to **Artifacts**, and download
 
 ```bash
 # Linux / macOS
-tar xzf djgyrofix-v0.3.1-linux-amd64.tar.gz
-sudo install djgyrofix-v0.3.1-linux-amd64/djgyrofix /usr/local/bin/
+tar xzf djgyrofix-v0.3.2-linux-amd64.tar.gz
+sudo install djgyrofix-v0.3.2-linux-amd64/djgyrofix /usr/local/bin/
 djgyrofix version
 ```
 
@@ -290,7 +290,7 @@ djgyrofix version
 
 The version is resolved from the build rather than hardcoded, so it cannot
 disagree with the release it came from. A release binary reports its tag
-(`0.3.1`); one built from a working tree reports the commit
+(`0.3.2`); one built from a working tree reports the commit
 (`devel+a1b2c3d4e5f6`, with `.dirty` appended for uncommitted changes). Whatever
 it reports is also what gets written into every patch journal, so a journal
 always names the exact build that produced it.
@@ -448,9 +448,14 @@ level are what make that stretch visible, and the `upstream` verdict is what
 says it out loud. A short event list over rough footage is a symptom, not a
 reassurance.
 
-The noisy level is half the effective `--floor-dps`, so it scales with the
-detection floor and `--sensitivity` rather than being an absolute constant.
-`scan --format json` carries the whole thing under `noise` and `advice`.
+The noisy level is an absolute 90 °/s and deliberately does not move with
+`--floor-dps`, `--profile` or `--sensitivity`. How much an airframe resonates is
+a property of the aircraft, not of how wide a search you asked for, and the same
+footage changing diagnosis because you changed the search would be a bug. It is
+bracketed by two measurements: the p90 of the real repairable clip in
+[the findings](docs/FINDINGS.md) (66.7 °/s) sits below it, and a clip resonating
+end to end sits above it. `scan --format json` carries the whole thing under
+`noise` and `advice`.
 
 ## Autopilot
 
@@ -500,7 +505,7 @@ sidecar journal instead:
 // DJI_0042.MP4.gyrofix.json
 {
   "version": 1,
-  "tool": "djgyrofix 0.3.1",
+  "tool": "djgyrofix 0.3.2",
   "source":   { "name": "DJI_0042.MP4", "size": 21474836480, "mtime": "..." },
   "track":    { "variant": "wm169", "timescale": 1000, "samples": 36012 },
   "metadata_digest": "sha256:...",   // djmd sample bytes only, pre-patch
@@ -699,15 +704,23 @@ They are different problems and it is entirely reasonable to need both.
   clip in [the findings](docs/FINDINGS.md) exercises the complete patch, rescan,
   verify and revert path. Start with `--profile conservative` and a dry run on
   material you care about.
-- **The diagnosis inherits that calibration.** What counts as a noisy clip is
-  measured relative to `--floor-dps` rather than against a corpus of known-good
-  and known-bad footage, and the shares that separate one verdict from the next
-  are judgement calls held in one place
-  ([`internal/advise`](internal/advise/advise.go)). The measurements it quotes
-  are exact; where the line between `patch` and `upstream` belongs is the part
-  that will move as more real footage is seen. It never patches on its own — a
-  verdict changes what you are told, and, under `--auto`, whether the tool
-  declines. It cannot widen what gets written.
+- **The diagnosis rests on a narrower calibration still.** The 90 °/s level that
+  separates `patch` from `upstream` has exactly one real measurement below it
+  and one generated measurement above it. It shipped wrong once: derived from
+  `--floor-dps`, it put the real 8m17s clip — 6.17% flagged, 91.6% residual
+  reduction, a clean rescan — on the wrong side of the line and told the pilot
+  to go re-mount a camera. The measurements the block quotes are exact; the
+  single number and the shares that separate one verdict from the next are
+  judgement calls, held in
+  [`internal/detect/noise.go`](internal/detect/noise.go) and
+  [`internal/advise`](internal/advise/advise.go) so they are easy to find and
+  argue with. If a scan calls your footage an airframe problem and you believe
+  it is not, that is worth
+  [an issue](https://github.com/steamvogue/djgyrofix/issues) with the `noise`
+  block from `scan --format json` — it is the measurement this number needs.
+  The diagnosis never patches on its own: a verdict changes what you are told,
+  and, under `--auto`, whether the tool declines. It cannot widen what gets
+  written.
 
 ## Licence
 

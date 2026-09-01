@@ -142,7 +142,7 @@ func upstream(in Input) Advice {
 
 	advice := Advice{Verdict: VerdictUpstream}
 	if wholeClip {
-		advice.Headline = "the recorded metadata is not what is wrong here — the noise floor is"
+		advice.Headline = "the metadata is not what is wrong here — the noise floor is"
 		advice.Reasons = []string{
 			fmt.Sprintf("the local residual floor is at or above %.1f °/s across %.0f%% of the clip (%s)",
 				in.Noise.NoisyDPS, in.Noise.NoisyFraction*100, seconds(in.Noise.NoisySeconds)),
@@ -221,7 +221,7 @@ func clean(in Input) Advice {
 		Headline: "no correctable artifacts in the metadata",
 		Reasons: []string{
 			fmt.Sprintf("noise floor %.1f °/s typical, %.1f °/s p90, against a %.1f °/s detection floor",
-				in.Noise.P50, in.Noise.P90, in.Noise.NoisyDPS*2),
+				in.Noise.P50, in.Noise.P90, in.Noise.FloorDPS),
 		},
 		Suggestions: []Suggestion{{
 			Flags: NoFlag,

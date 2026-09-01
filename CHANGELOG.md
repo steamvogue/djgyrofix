@@ -6,6 +6,33 @@ Notable changes to djgyrofix. The format follows
 
 ## [Unreleased]
 
+## [0.3.2] — 2026-09-01
+
+Two defects in the 0.3.0 diagnosis, both found by running it on real footage.
+
+### Fixed
+
+- **The `upstream` verdict fired on repairable footage.** The level separating
+  background noise from a defect was derived from `--floor-dps`, and was
+  calibrated against synthetic fixtures whose clean case idles at 0.6 °/s —
+  a 200× gap from the rough case, wide enough that any threshold between them
+  looked correct. Real FPV footage carries a far higher residual floor. The
+  8m17s clip in [the findings](docs/FINDINGS.md) measures 39.2 °/s typical and
+  66.7 °/s at p90 and is demonstrably repairable — 6.17% flagged, a 91.6%
+  residual reduction, a rescan that comes back empty — and it was being called
+  an airframe problem. Under `--auto` that refused to patch it.
+
+  The level is now an absolute 90 °/s and no longer moves with `--floor-dps`,
+  `--profile` or `--sensitivity`. How much an airframe resonates is a property
+  of the aircraft, not of how wide a search was asked for; the same footage
+  changing diagnosis because only the search changed was wrong in principle as
+  well as in practice. A regression test pins the real clip's measurements on
+  one side and a resonating clip on the other.
+- **A wrapped line could end on a single short word**, which read as a
+  rendering fault rather than as a wrap. The wrapper now reflows the line above
+  to absorb a stub, and the `upstream` headline is short enough not to wrap at
+  all.
+
 ## [0.3.1] — 2026-09-01
 
 Tooling only: v0.3.0 shipped correct binaries from a tree that did not pass its
@@ -210,7 +237,8 @@ byte-for-byte output parity against it in manual-range mode.
 - Writing a full copy of the video for every edit. `--out` keeps that behaviour
   where it is wanted.
 
-[Unreleased]: https://github.com/steamvogue/djgyrofix/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/steamvogue/djgyrofix/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/steamvogue/djgyrofix/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/steamvogue/djgyrofix/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/steamvogue/djgyrofix/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/steamvogue/djgyrofix/compare/v0.1.1...v0.2.0
