@@ -26,6 +26,12 @@ built and measured, and the implementation is the authority where they disagree:
   as needing verification against Gyroflow's parser for units, axis convention
   and orientation string. That verification has not happened, and shipping an
   unverified guess would be worse than shipping nothing.
+- **§5.1 and §6.2 were replaced on the `rebirth` branch.** The reported defect
+  is a damped, low-frequency attitude overshoot around sharp vector changes,
+  not necessarily high-frequency sensor noise. Detection now compares angular
+  velocity with a ±60 ms local trend, and confirmed events receive an explicit
+  correction floor with smooth exterior shoulders. Corrupt samples are bridged
+  into the working series before it is filtered.
 - **Milestone estimates were for a human.** Ignore them.
 
 The plan as written follows.
@@ -34,8 +40,8 @@ The plan as written follows.
 
 # djgyrofix — Go rewrite plan
 
-A dependency-free Go CLI that detects and corrects high-frequency attitude
-(quaternion) artifacts in DJI MP4/MOV metadata, in place, with exact revert.
+A dependency-free Go CLI that detects and corrects transient attitude
+(quaternion) deviations in DJI MP4/MOV metadata, in place, with exact revert.
 
 Derived from [`kim2160/DJIGyroFix`](https://github.com/kim2160/DJIGyroFix) v0.92
 (GPL-3.0). This is a port plus rework, therefore a derivative work: **the Go
@@ -51,10 +57,10 @@ quaternions** in protobuf wire format, stored as four little-endian `float32`
 values in `(w, x, y, z)` order.
 
 Gyroflow reads that track as ground truth for how far to counter-rotate each
-frame. When the track contains a brief high-frequency artifact — telemetry
-dropout, RF corruption, or a genuine sharp impact — Gyroflow's correction over
-those samples is abrupt, and stabilized output can look *worse* than the
-original footage.
+frame. When the track contains a brief transient deviation — telemetry dropout,
+RF corruption, or an out-of-sync response around a sharp vector change —
+Gyroflow's correction over those samples is abrupt, and stabilized output can
+look *worse* than the original footage.
 
 The fix is a **byte-level in-place patch**: overwrite the same 4-byte float
 slots with filtered values. Sample sizes never change, so `stsz`/`stco`/`co64`
@@ -166,12 +172,12 @@ Ported from `detection.py`, which already gets the core right:
 
 1. Per-sample angular velocity from the delta quaternion:
    `Δq = q[i] ⊗ q[i-1]⁻¹`, angle `2·atan2(|v|, w)`, scaled to °/s by `Δt`.
-2. Low-pass the velocity vector (box blur, ~12 ms radius).
+2. Estimate the local velocity trend (centered box blur, ~60 ms radius).
 3. **Residual** = velocity − low-passed velocity.
 
 The residual is the right discriminator and the reason automatic detection is
-viable: a whip-pan or flip is *smooth* fast rotation and cancels out. Only
-high-frequency content survives.
+viable: a smooth whip-pan or flip mostly cancels, while a brief overshoot or
+damped low-frequency ring after a vector change remains visible.
 
 4. Bin residual energy at 10 ms; metric per bin = RMS.
 
@@ -203,7 +209,8 @@ Before classifying anything as an artifact, test whether the data is
 *physically possible*. This is what separates "telemetry corruption" — safe to
 reconstruct — from "real violent motion" — must not be touched:
 
-- Implied angular rate exceeds IMU full scale (configurable, default 2000 °/s).
+- A nearby pair of opposing over-full-scale transitions returns near the
+  pre-entry trajectory and settles (configurable full scale, default 2000 °/s).
 - Raw quaternion norm far from unity **before** normalization.
 - Sample timestamp discontinuity or duplicate DTS.
 - Single-sample discontinuity with immediate return to baseline.
@@ -248,23 +255,28 @@ removes only the glitch.
 camera never had, and Gyroflow will then mis-correct with full confidence.
 Default `--bridge-max-samples 3`; refuse to bridge longer runs.
 
-### 6.2 Jitter → continuous weight envelope
+### 6.2 Jitter → event-confidence envelope
 
 This replaces the original's binary time windows and is the bigger win: it makes
 manual range entry obsolete rather than merely automating it.
 
 ```
 excess(t)  = (metric(t) − threshold(t)) / (k · threshold(t))
-w(t)       = smoothstep(clamp(excess(t), 0, 1))
-w          = boxblur(w, ~100 ms)                    # soft shoulders
-out(t)     = slerp(original(t), smoothed(t), w(t) · strength)
+w_event    = max(event_confidence, max smoothstep(clamp(excess(t), 0, 1)) in event)
+w(t)       = w_event across the event, with ~100 ms smooth shoulders
+out(t)     = slerp(working(t), smoothed(t), w(t) · strength)
 ```
 
-Smoothing strength now tracks how bad each moment actually is and tapers to zero
-on its own. This **deletes the entire edge-correction block** in
-`smooth_quaternions` — `start_correction`, `end_correction`, and the boundary
-`_smoothstep` — because `w → 0` continuously at event edges by construction.
-There is no discontinuity left to patch over.
+Detection confidence supplies a meaningful correction floor throughout a
+confirmed event; peak excess can raise the whole event to full correction. One
+stable core weight avoids manufacturing blend transitions at the 10 ms bin
+boundaries. The exterior shoulders taper to zero without attenuating the event
+core. Confirmed corrupt samples are bridged before the same working series is
+filtered, so contained dropout and jitter corrections share their boundaries.
+
+Rescan for at most three correction passes. A newly exposed smoothing event may
+join a later pass only while the union of authorized ranges remains below
+`--max-affected`. Never add a newly detected dropout during re-evaluation.
 
 Retain from the original: sign unwrapping before filtering (`if dot(prev,q) < 0:
 negate`), three box-blur passes as a Gaussian approximation, renormalization
@@ -418,7 +430,7 @@ baseline 18.4 °/s   threshold 71.2 °/s (rolling)
 $ djgyrofix fix --apply DJI_0042.MP4
 patched 3 events, 1,284 quaternions, 5,136 bytes
 journal: DJI_0042.MP4.gyrofix.json
-high-frequency residual reduced 71.3%
+transient residual reduced 71.3%
 
 $ djgyrofix revert DJI_0042.MP4
 restored 5,136 bytes — file matches original digest

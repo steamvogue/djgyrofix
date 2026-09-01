@@ -20,7 +20,7 @@ func main() {
 	out := flag.String("o", "fixture.MP4", "output path")
 	seconds := flag.Float64("seconds", 30, "clip length")
 	rate := flag.Float64("rate", 200, "quaternion rate in Hz")
-	kind := flag.String("kind", "mixed", "clean | jitter | impact | dropout | whippan | mixed")
+	kind := flag.String("kind", "mixed", "clean | jitter | vector-change | vector-jitter | impact | dropout | whippan | mixed")
 	variant := flag.String("variant", "wm169", "wm169 | wa530 | oq101")
 	perSample := flag.Int("per-sample", 4, "quaternions per metadata sample")
 	rough := flag.Float64("rough-until", 0, "add broadband shake from t=0 until this time")

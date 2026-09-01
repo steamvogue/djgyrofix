@@ -5,8 +5,8 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/steamvogue/djgyrofix)](https://goreportcard.com/report/github.com/steamvogue/djgyrofix)
 [![License: GPL v3](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 
-A dependency-free Go CLI that detects and corrects high-frequency attitude
-artifacts in DJI MP4/MOV metadata, in place, with exact revert.
+A dependency-free Go CLI that detects and corrects transient attitude
+deviations in DJI MP4/MOV metadata, in place, with exact revert.
 
 ## Why this exists
 
@@ -28,8 +28,8 @@ same ground [on video][madstech].
 Here is the part that matters for this tool. **Gyroflow trusts the recorded
 gyro track completely.** It reads those quaternions as ground truth for how far
 to counter-rotate each frame. When the track carries a brief artifact — a
-telemetry dropout, a corrupted sample, a burst of high-frequency content the
-camera never actually experienced — Gyroflow counter-rotates against it with
+telemetry dropout, a corrupted sample, or an out-of-sync overshoot after a
+sharp motion-vector change — Gyroflow counter-rotates against it with
 full confidence, and the correction is more violent than the motion it was
 supposed to remove. That is why the stabilized clip can look worse than the
 original: not because stabilization failed, but because it succeeded against bad
@@ -43,7 +43,7 @@ tune, and the other checks in Oscar's article — not this tool.
 
 What it *can* do is repair the recorded track where the artifact is in the data
 rather than in the airframe: short dropouts, corrupted samples, and brief
-high-frequency bursts that survive into the metadata. It patches those, leaves
+transient deviations that survive into the metadata. It patches those, leaves
 genuine motion alone, and hands Gyroflow something it can trust.
 
 It is also a diagnostic. Run `djgyrofix scan` and read the answer:
@@ -107,7 +107,7 @@ $ djgyrofix fix --apply sample.MP4
 ...
 patched 331 quaternions in 85 samples, 5296 bytes
 journal: sample.MP4.gyrofix.json
-high-frequency residual reduced 99.7%
+transient residual reduced 99.7%
 
 $ djgyrofix revert sample.MP4
 sample.MP4: restored, matches original digest — 5296 bytes (1324 writes)
@@ -166,10 +166,10 @@ quaternions in protobuf wire format: four little-endian `float32` values in
 `(w, x, y, z)` order.
 
 Gyroflow reads that track as ground truth for how far to counter-rotate each
-frame. When the track contains a brief high-frequency artifact — telemetry
-dropout, RF corruption, or a genuine sharp impact — Gyroflow's correction over
-those samples is abrupt, and stabilized output can look *worse* than the
-original footage.
+frame. When the track contains a brief transient deviation — telemetry dropout,
+RF corruption, or an out-of-sync response around a sharp vector change —
+Gyroflow's correction over those samples is abrupt, and stabilized output can
+look *worse* than the original footage.
 
 The fix is a byte-level in-place patch: the same four-byte float slots are
 overwritten with filtered values. Sample sizes never change, so `stsz`, `stco`
@@ -291,14 +291,14 @@ always names the exact build that produced it.
 ## How detection works
 
 **The signal.** Per-sample angular velocity comes from the delta quaternion,
-`Δq = q[i] ⊗ q[i-1]⁻¹`. That velocity is low-passed with a ~12 ms box blur, and
-the **residual** — velocity minus its own low-passed copy — is what everything
-downstream measures.
+`Δq = q[i] ⊗ q[i-1]⁻¹`. That velocity is compared with a centered moving
+average using a ~60 ms radius. The **residual** — velocity minus that local
+motion trend — is what everything downstream measures.
 
-The residual is the whole reason automatic detection is viable. A whip-pan or a
-flip is *smooth* fast rotation and cancels out entirely; only high-frequency
-content survives. A plain velocity threshold would flag every intentional fast
-move in the clip.
+The residual is the whole reason automatic detection is viable. A smooth
+whip-pan or flip mostly cancels, while a brief overshoot or damped low-frequency
+ring after a vector change remains visible. A plain velocity threshold would
+flag every intentional fast move in the clip.
 
 **The threshold** is a sliding Hampel window rather than one global number:
 
@@ -314,9 +314,10 @@ to the reference's global baseline, because a five-second window cannot slide
 over them.
 
 **The plausibility gate** decides what may be *reconstructed* rather than merely
-smoothed. Four independent tests condemn a sample: an implied rate above IMU
-full scale, a raw quaternion norm far from unity, a timestamp discontinuity or
-duplicate decode time, and a single-sample excursion that immediately reverses.
+smoothed. A raw quaternion norm far from unity, a timestamp discontinuity, or a
+duplicate decode time condemns a sample directly. Over-full-scale transitions
+are bridgeable only as a nearby opposing pair that returns near the pre-entry
+trajectory and settles; a lone fast transition remains motion, not corruption.
 
 Only samples that fail this gate are eligible for bridging. This is the line
 between telemetry corruption, which is safe to reconstruct, and real violent
@@ -339,23 +340,29 @@ orientation before the run and the first good one after, weighted by timestamp.
 Blurring would destroy the surrounding motion dynamics, where a SLERP preserves
 the real motion exactly and removes only the glitch.
 
-Everything else is smoothed by a **continuous weight envelope**:
+Everything else is smoothed by an **event-confidence envelope**:
 
 ```
 excess(t) = (metric(t) − threshold(t)) / (k · threshold(t))
-w(t)      = boxblur( smoothstep( clamp(excess, 0, 1) ), ~100 ms )
-out(t)    = slerp( original(t), smoothed(t), w(t) · strength )
+w_event   = max(event_confidence, max smoothstep(clamp(excess, 0, 1)) in event)
+w(t)      = w_event across the event, with ~100 ms smooth shoulders
+out(t)    = slerp(working(t), smoothed(t), w(t) · strength)
 ```
 
-Smoothing strength tracks how bad each moment actually is and tapers to zero on
-its own. That deletes the reference's entire edge-correction block — the start
-and end correction quaternions and their boundary smoothstep — because `w → 0`
-continuously at every event edge by construction. There is no discontinuity left
-to patch over.
+Detection confidence provides a meaningful minimum correction throughout a
+confirmed event, while peak excess can raise the whole event to full correction.
+Keeping one stable core weight avoids manufacturing 10 ms blend steps. Smooth
+shoulders taper to zero outside the event. Confirmed corrupt samples are bridged
+into one working series before that series is filtered, so contained dropout
+and jitter corrections compose without stale boundaries.
 
 The blur radius is derived per event rather than fixed at one global 180 ms:
 roughly 60–100 ms for an impact, and scaled to duration and clamped to 120–400 ms
 for jitter.
+
+Correction is rescanned for at most three passes. Newly exposed smoothing events
+may join later passes only while the union of correction ranges remains under
+`--max-affected`; a newly detected dropout is never added automatically.
 
 ## Safety
 
@@ -423,24 +430,26 @@ Each of these has a test that fails if it is broken, in
 
 ## Testing
 
-### Verified on real footage
+### Real-footage validation
 
-Everything below is also exercised against a real 6.5 GB DJI clip — 8m17s of
-59.94 fps video with 993,523 quaternions at 1978 Hz, three tracks (`hvc1`
-video, `djmd` metadata, `dbgi` debug), wm169 layout.
+The `rebirth` pipeline is exercised against a real 6.5 GB DJI clip — 8m17s of
+59.94 fps video with 993,523 quaternions at 1978 Hz, three tracks (`hvc1` video,
+`djmd` metadata, `dbgi` debug), wm169 layout.
 
 | Step | Result |
 |------|--------|
 | `info` | Selected the `djmd` track over the decoy `dbgi` track, sniffed wm169, 33.33 quaternions per sample |
-| `scan` | 98 events in 9.3 s — 69 jitter, 17 dropout, 12 impact, 5.9% of the clip affected |
-| `fix --apply` | 84,133 quaternions in 2,609 samples, 335,761 four-byte writes, 11.4 s |
-| `verify` | All 335,761 ranges correct, digest ok, size unchanged, 0.9 s |
-| `revert` | 1.3 s, and `sha256sum` matched the original exactly |
+| `scan` | 85 events — 73 jitter, 12 impact, **0 dropout**; 30.683 s / 6.17% affected, including 3 bounded discoveries |
+| `fix --apply --out` | 102,824 quaternions in 3,164 samples, 411,268 four-byte writes; transient score reduced 91.6% |
+| rescan patched copy | **No events** at the recalculated rolling threshold |
+| `verify` | All 411,268 ranges correct, digest ok, 6,570,736,456-byte size unchanged |
+| `revert --keep-journal` | Restored 1,645,072 bytes; `cmp` against the original returned identical |
 
-The dropouts are the notable part: the plausibility gate found 17 runs of
-physically impossible samples in a real recording. That is the failure mode this
-tool exists for, and it is not something the synthetic fixtures could have
-proven.
+The old plausibility gate reported 17 dropout runs. Requiring an opposing edge,
+a return near the pre-entry trajectory, and a settled continuation rejects all
+17 on this clip as real rapid motion rather than bridgeable corruption. In
+particular, the continuous burst around 257.2 seconds is smoothed as one jitter
+region instead of reconstructed as a dozen dropouts.
 
 Real footage is not committed — it is gigabytes, and the repository has to stay
 cloneable. Everything in `make test` runs against generated fixtures.
@@ -494,7 +503,9 @@ go run ./tools/mkfixture -o sample.MP4 -kind mixed -variant wm169 -seconds 30
 ./djgyrofix scan sample.MP4
 ```
 
-`-kind` accepts `clean`, `jitter`, `impact`, `dropout`, `whippan` and `mixed`.
+`-kind` accepts `clean`, `jitter`, `vector-change`, `vector-jitter`, `impact`,
+`dropout`, `whippan` and `mixed`. The vector pair is the reusable regression:
+the clean change must remain untouched while the damped 6 Hz response is fixed.
 The `whippan` case is the important one: it is fast rotation that detection must
 **never** flag, and false positives on intentional motion are the main risk of
 automating any of this.

@@ -14,12 +14,14 @@ type Defect string
 // detection must never flag, and false positives on intentional motion are the
 // main risk of automating any of this.
 const (
-	DefectNone    Defect = "clean"
-	DefectJitter  Defect = "jitter"
-	DefectImpact  Defect = "impact"
-	DefectDropout Defect = "dropout"
-	DefectWhipPan Defect = "whippan"
-	DefectMixed   Defect = "mixed"
+	DefectNone         Defect = "clean"
+	DefectJitter       Defect = "jitter"
+	DefectVectorChange Defect = "vector-change"
+	DefectVectorJitter Defect = "vector-jitter"
+	DefectImpact       Defect = "impact"
+	DefectDropout      Defect = "dropout"
+	DefectWhipPan      Defect = "whippan"
+	DefectMixed        Defect = "mixed"
 )
 
 // AttitudeOptions configures a generated attitude series.
@@ -42,6 +44,8 @@ type AttitudeOptions struct {
 	// JitterAt moves the injected jitter burst, so it can be placed in the
 	// calm part of a mostly-rough clip. Zero means the default window.
 	JitterAt float64
+	// DropoutTime moves the corrupt run. Zero means DropoutAt.
+	DropoutTime float64
 }
 
 // Windows are the time spans each defect occupies, in seconds.
@@ -84,7 +88,14 @@ func Attitude(options AttitudeOptions) []quat.Q {
 	current := quat.Q{1, 0, 0, 0}
 
 	wants := func(defect Defect) bool {
-		return options.Defect == defect || options.Defect == DefectMixed
+		if options.Defect == defect {
+			return true
+		}
+		if options.Defect != DefectMixed {
+			return false
+		}
+		return defect == DefectJitter || defect == DefectImpact ||
+			defect == DefectDropout || defect == DefectWhipPan
 	}
 
 	for index := 0; index < count; index++ {
@@ -100,6 +111,38 @@ func Attitude(options AttitudeOptions) []quat.Q {
 			omega[0] += 260 * math.Sin(2*math.Pi*41*seconds)
 			omega[2] += 190 * math.Sin(2*math.Pi*37*seconds+1.1)
 		}
+		// A deliberate change of rotation axis is legitimate motion. The
+		// vector-jitter variant adds a damped, low-frequency attitude response
+		// after the same change: it is fast enough to be objectionable, but is
+		// not broadband sensor noise.
+		if wants(DefectVectorChange) || wants(DefectVectorJitter) {
+			const changeAt = JitterStart
+			const transition = 0.12
+			const moveStart = changeAt - 0.7
+			const moveEnd = changeAt + 0.7
+			if seconds >= moveStart && seconds < moveEnd {
+				gain := 1.0
+				if seconds < moveStart+transition {
+					amount := (seconds - moveStart) / transition
+					gain = 0.5 - 0.5*math.Cos(math.Pi*amount)
+				} else if seconds > moveEnd-transition {
+					amount := (moveEnd - seconds) / transition
+					gain = 0.5 - 0.5*math.Cos(math.Pi*amount)
+				}
+				axisAmount := math.Min(1, math.Max(0, (seconds-changeAt)/transition))
+				axisAmount = 0.5 - 0.5*math.Cos(math.Pi*axisAmount)
+				omega[0] += 240 * gain * (1 - axisAmount)
+				omega[2] += 240 * gain * axisAmount
+			}
+			if wants(DefectVectorJitter) {
+				delta := seconds - changeAt
+				if delta >= 0 && delta < 0.8 {
+					ring := math.Exp(-delta/0.34) * math.Sin(2*math.Pi*6*delta)
+					omega[0] += 210 * ring
+					omega[2] -= 165 * ring
+				}
+			}
+		}
 		if wants(DefectImpact) {
 			// A real impact is a sharp transient that rings down. A constant
 			// rate held for the same duration is smooth motion, and detection
@@ -110,7 +153,7 @@ func Attitude(options AttitudeOptions) []quat.Q {
 		}
 		if wants(DefectWhipPan) && seconds > WhipPanStart && seconds < WhipPanEnd {
 			// Fast, but perfectly smooth: a half-sine rate profile with no
-			// high-frequency content at all.
+			// short-timescale oscillation at all.
 			omega[2] += 420 * math.Sin(math.Pi*(seconds-WhipPanStart)/(WhipPanEnd-WhipPanStart))
 		}
 		if options.RoughUntil > 0 && seconds < options.RoughUntil {
@@ -127,7 +170,11 @@ func Attitude(options AttitudeOptions) []quat.Q {
 	if wants(DefectDropout) {
 		// A short run of physically impossible orientation with valid data on
 		// both sides — telemetry corruption, not motion.
-		at := int(DropoutAt * options.Rate)
+		dropoutAt := options.DropoutTime
+		if dropoutAt <= 0 {
+			dropoutAt = DropoutAt
+		}
+		at := int(dropoutAt * options.Rate)
 		for offset := 0; offset < DropoutSamples && at+offset < count; offset++ {
 			track[at+offset] = quat.Q{0.51, 0.62, -0.44, 0.39}
 		}

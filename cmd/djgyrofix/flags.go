@@ -63,13 +63,17 @@ func (o *options) registerCorrection(flags *flag.FlagSet) {
 }
 
 func (o *options) registerIO(flags *flag.FlagSet, forFix bool) {
+	// Scan performs the same bounded correction analysis as fix so its dry-run
+	// report predicts the eventual writes. Fix exposes the limit as a flag;
+	// scan still needs the same default expansion budget internally.
+	o.maxAffected = 0.15
 	if forFix {
 		flags.BoolVar(&o.dryRun, "dry-run", false, "analyze and report without writing (the default)")
 		flags.BoolVar(&o.apply, "apply", false, "actually write")
 		flags.StringVar(&o.backup, "backup", "journal", "undo strategy: journal | copy | none")
 		flags.StringVar(&o.out, "out", "", "write a patched copy here instead of patching in place")
 		flags.BoolVar(&o.force, "force", false, "override idempotency and safety guards")
-		flags.Float64Var(&o.maxAffected, "max-affected", 0.15, "refuse if flagged duration exceeds this fraction of the clip")
+		flags.Float64Var(&o.maxAffected, "max-affected", o.maxAffected, "refuse if flagged duration exceeds this fraction of the clip")
 	}
 	flags.StringVar(&o.variant, "variant", "auto", "metadata layout: wm169 | wa530 | oq101 | auto")
 	flags.IntVar(&o.jobs, "jobs", runtime.NumCPU(), "files to process in parallel")

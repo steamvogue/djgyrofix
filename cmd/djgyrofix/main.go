@@ -1,4 +1,4 @@
-// Command djgyrofix detects and corrects high-frequency attitude artifacts in
+// Command djgyrofix detects and corrects transient attitude deviations in
 // the timed-metadata track of DJI MP4 and MOV files.
 //
 // The correction is a byte-level in-place patch: the same four-byte float slots
@@ -29,8 +29,8 @@ func usage() string {
 
 usage: djgyrofix <command> [flags] <file...>
 
-Detects and corrects high-frequency attitude artifacts in the timed-metadata
-track of DJI MP4 and MOV files, so Gyroflow stops over-correcting on them.
+Detects and corrects transient attitude deviations in the timed-metadata track
+of DJI MP4 and MOV files, so Gyroflow stops over-correcting on them.
 The patch is byte-level and size-preserving: nothing is re-encoded or remuxed.
 
 Commands:

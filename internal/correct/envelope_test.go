@@ -14,9 +14,13 @@ import (
 const rate = 200.0
 
 func series(defect synth.Defect) ([]float64, []quat.Q) {
-	track := synth.Attitude(synth.AttitudeOptions{
+	return seriesWithOptions(synth.AttitudeOptions{
 		Defect: defect, Rate: rate, Seconds: 30, Seed: 20260901,
 	})
+}
+
+func seriesWithOptions(options synth.AttitudeOptions) ([]float64, []quat.Q) {
+	track := synth.Attitude(options)
 	times := make([]float64, len(track))
 	values := make([]quat.Q, len(track))
 	for index, value := range track {
@@ -165,6 +169,69 @@ func TestEnvelopeReducesHighFrequencyContent(t *testing.T) {
 	}
 	if after >= before {
 		t.Errorf("angular acceleration went from %g to %g; the correction did not help", before, after)
+	}
+}
+
+func TestEnvelopeClearsDetectedVectorJitter(t *testing.T) {
+	times, values := seriesWithOptions(synth.AttitudeOptions{
+		Defect: synth.DefectVectorJitter, Rate: rate, Seconds: 30, Seed: 20260901,
+	})
+	result := detected(t, times, values)
+	output, err := correct.Envelope(times, values, result, correct.EnvelopeOptions{Strength: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := detected(t, times, output)
+	for _, event := range after.Events {
+		if event.Action == detect.ActionSmooth &&
+			event.StartSeconds <= synth.JitterStart+0.25 && synth.JitterStart+0.25 <= event.EndSeconds {
+			t.Errorf("corrected vector jitter remains actionable: %+v", event)
+		}
+	}
+}
+
+func TestContainedDropoutIsBridgedBeforeItsJitterTrackIsFiltered(t *testing.T) {
+	times, values := series(synth.DefectJitter)
+	at := int((synth.JitterStart + 0.45) * rate)
+	for offset := 0; offset < synth.DropoutSamples; offset++ {
+		values[at+offset] = quat.Q{0.51, 0.62, -0.44, 0.39}
+	}
+	result := detected(t, times, values)
+	hasBridge, hasSmooth := false, false
+	for _, event := range result.Events {
+		hasBridge = hasBridge || event.Action == detect.ActionBridge
+		hasSmooth = hasSmooth || (event.Action == detect.ActionSmooth &&
+			event.FirstPoint <= at && at <= event.LastPoint)
+	}
+	if !hasBridge || !hasSmooth {
+		t.Fatalf("fixture needs overlapping bridge and smooth events: %+v", result.Events)
+	}
+	output, err := correct.Envelope(times, values, result, correct.EnvelopeOptions{Strength: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := detected(t, times, output)
+	for _, event := range after.Events {
+		if event.Action == detect.ActionBridge && event.FirstPoint <= at+1 && event.LastPoint >= at {
+			t.Errorf("correction introduced or retained a dropout at the composed boundary: %+v", event)
+		}
+	}
+}
+
+func TestPreparedAccelerationScorerMatchesSingleRangeWrapper(t *testing.T) {
+	times, values := series(synth.DefectMixed)
+	scorer, err := correct.PrepareAngularAcceleration(times, values)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, span := range [][2]float64{{8, 9.2}, {15, 15.06}, {20, 20.9}, {25, 25.02}} {
+		want, err := correct.AngularAccelerationScore(times, values, span[0], span[1])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := scorer.Score(span[0], span[1]); got != want {
+			t.Errorf("Score(%v) = %g, want %g", span, got, want)
+		}
 	}
 }
 

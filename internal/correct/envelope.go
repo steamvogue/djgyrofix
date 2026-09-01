@@ -41,26 +41,35 @@ func Envelope(times []float64, values []quat.Q, result *detect.Result, options E
 		}
 		normalized[index] = unit
 	}
+	working := append([]quat.Q(nil), normalized...)
 
 	// Two events whose weight shoulders overlap must not both correct the same
 	// point; the second pass would smooth an already-smoothed value with a
 	// different window. Events are in time order, so the first one wins.
 	corrected := make([]bool, len(values))
 
+	// Reconstruct every confirmed corrupt run before filtering anything. A
+	// smoothing event may begin before a contained dropout, so relying on event
+	// order would otherwise filter corrupt input and later bridge from stale
+	// neighbours.
 	for _, event := range result.Events {
-		switch event.Action {
-		case detect.ActionBridge:
-			if err := bridge(times, normalized, output, event, result.Implausible, corrected); err != nil {
-				return nil, err
-			}
-		case detect.ActionSmooth:
-			window := options.SmoothingMS
-			if window <= 0 {
-				window = event.SmoothingMS
-			}
-			if err := smoothEvent(times, normalized, output, result, event, window, strength, corrected); err != nil {
-				return nil, err
-			}
+		if event.Action != detect.ActionBridge {
+			continue
+		}
+		if err := bridge(times, working, output, event, result.Implausible); err != nil {
+			return nil, err
+		}
+	}
+	for _, event := range result.Events {
+		if event.Action != detect.ActionSmooth {
+			continue
+		}
+		window := options.SmoothingMS
+		if window <= 0 {
+			window = event.SmoothingMS
+		}
+		if err := smoothEvent(times, working, output, result, event, window, strength, corrected); err != nil {
+			return nil, err
 		}
 	}
 	return output, nil
@@ -74,7 +83,7 @@ func Envelope(times []float64, values []quat.Q, result *detect.Result, options E
 // preserves the real motion exactly and removes only the glitch. This runs only
 // on samples that failed the plausibility gate, which is the hard precondition
 // from plan §5.3 — bridging genuine violent motion would fabricate orientation.
-func bridge(times []float64, normalized, output []quat.Q, event detect.Event, implausible, corrected []bool) error {
+func bridge(times []float64, working, output []quat.Q, event detect.Event, implausible []bool) error {
 	before := event.FirstPoint - 1
 	for before >= 0 && before < len(implausible) && implausible[before] {
 		before--
@@ -83,7 +92,7 @@ func bridge(times []float64, normalized, output []quat.Q, event detect.Event, im
 	for after < len(implausible) && implausible[after] {
 		after++
 	}
-	if before < 0 || after >= len(normalized) {
+	if before < 0 || after >= len(working) {
 		return nil
 	}
 	span := times[after] - times[before]
@@ -92,18 +101,18 @@ func bridge(times []float64, normalized, output []quat.Q, event detect.Event, im
 	}
 	for index := event.FirstPoint; index <= event.LastPoint && index < len(output); index++ {
 		amount := (times[index] - times[before]) / span
-		value, err := quat.Slerp(normalized[before], normalized[after], amount)
+		value, err := quat.Slerp(working[before], working[after], amount)
 		if err != nil {
 			return fmt.Errorf("bridge at %.3fs: %w", times[index], err)
 		}
 		// Align to the preceding good sample rather than to the corrupt
 		// original: the original's sign carries no information here, and
 		// matching it could introduce a double-cover flip mid-run.
-		if quat.Dot(value, normalized[before]) < 0.0 {
+		if quat.Dot(value, working[before]) < 0.0 {
 			value = value.Neg()
 		}
+		working[index] = value
 		output[index] = value
-		corrected[index] = true
 	}
 	return nil
 }
@@ -116,7 +125,7 @@ func bridge(times []float64, normalized, output []quat.Q, event detect.Event, im
 // each end of a hand-picked range, because the filter output steps at the
 // boundary. Here w(t) already falls to zero continuously at both edges by
 // construction, so the correction tapers itself.
-func smoothEvent(times []float64, normalized, output []quat.Q, result *detect.Result, event detect.Event, smoothingMS, strength float64, corrected []bool) error {
+func smoothEvent(times []float64, working, output []quat.Q, result *detect.Result, event detect.Event, smoothingMS, strength float64, corrected []bool) error {
 	if smoothingMS <= 0 {
 		return nil
 	}
@@ -133,8 +142,8 @@ func smoothEvent(times []float64, normalized, output []quat.Q, result *detect.Re
 		first = 0
 	}
 	last := event.LastPoint + contextPoints
-	if last > len(normalized)-1 {
-		last = len(normalized) - 1
+	if last > len(working)-1 {
+		last = len(working) - 1
 	}
 	if last <= first {
 		return nil
@@ -144,7 +153,7 @@ func smoothEvent(times []float64, normalized, output []quat.Q, result *detect.Re
 	if radius < 1 {
 		radius = 1
 	}
-	continuous := quat.Unwrap(normalized[first : last+1])
+	continuous := quat.Unwrap(working[first : last+1])
 	filtered := continuous
 	for pass := 0; pass < 3; pass++ {
 		var err error
@@ -171,12 +180,6 @@ func smoothEvent(times []float64, normalized, output []quat.Q, result *detect.Re
 		if corrected[index] {
 			continue
 		}
-		// A sample a bridge already reconstructed is left alone. Smoothing a
-		// bridged value would drag the interpolation back toward the corrupt
-		// neighbourhood the bridge was there to escape.
-		if index < len(result.Implausible) && result.Implausible[index] {
-			continue
-		}
 		weight := result.Weights[index] * strength
 		if weight <= 0 {
 			continue
@@ -191,7 +194,7 @@ func smoothEvent(times []float64, normalized, output []quat.Q, result *detect.Re
 		}
 		// Restore the source quaternion's sign, as the reference does, so the
 		// patched track keeps the same double-cover convention as the file.
-		if quat.Dot(value, normalized[index]) < 0.0 {
+		if quat.Dot(value, working[index]) < 0.0 {
 			value = value.Neg()
 		}
 		output[index] = value

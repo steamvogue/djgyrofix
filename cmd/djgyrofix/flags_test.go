@@ -1,9 +1,20 @@
 package main
 
 import (
+	"flag"
 	"math"
 	"testing"
 )
+
+func TestScanAndFixShareTheDefaultCorrectionBudget(t *testing.T) {
+	for _, forFix := range []bool{false, true} {
+		opts := &options{}
+		opts.registerIO(flag.NewFlagSet("test", flag.ContinueOnError), forFix)
+		if opts.maxAffected != 0.15 {
+			t.Errorf("registerIO(forFix=%v) set max-affected to %g, want 0.15", forFix, opts.maxAffected)
+		}
+	}
+}
 
 func TestParseTimeAcceptsSecondsAndClockValues(t *testing.T) {
 	cases := map[string]float64{

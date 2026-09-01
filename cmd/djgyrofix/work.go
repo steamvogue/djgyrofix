@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"sort"
 
 	"github.com/steamvogue/djgyrofix/internal/correct"
 	"github.com/steamvogue/djgyrofix/internal/detect"
@@ -113,12 +114,36 @@ func analyzeAuto(source *pipeline.Source, opts *options, result *analysis) error
 
 	times := pipeline.Times(points)
 	values := pipeline.Values(points)
-	corrected, err := correct.Envelope(times, values, detected, correct.EnvelopeOptions{
+	corrected, correctionPasses, postCorrection, discovered, correctionScopes, err := autoCorrect(points, detected, params, correct.EnvelopeOptions{
 		Strength:    opts.strength,
 		SmoothingMS: opts.smoothingMS,
-	})
+	}, opts.maxAffected)
 	if err != nil {
 		return err
+	}
+	if len(discovered) > 0 {
+		result.report.Events = append(result.report.Events, discovered...)
+		sort.SliceStable(result.report.Events, func(a, b int) bool {
+			return result.report.Events[a].StartSeconds < result.report.Events[b].StartSeconds
+		})
+		result.events = result.report.Events
+		result.report.AffectedSeconds = eventUnionSeconds(actionableEvents(result.report.Events))
+		if result.report.DurationSeconds > 0 {
+			result.report.AffectedFraction = result.report.AffectedSeconds / result.report.DurationSeconds
+		}
+	}
+	result.params["correction_passes"] = correctionPasses
+	result.params["events_discovered_during_correction"] = len(discovered)
+	scopePadding := math.Max(params.GapSeconds, params.EnvelopeBlurSeconds)
+	remaining, outside := residualEventCounts(postCorrection, correctionScopes, scopePadding)
+	if remaining > 0 {
+		result.report.Warnings = append(result.report.Warnings,
+			fmt.Sprintf("%d original correction region(s) remain detectable after %d bounded pass(es)",
+				remaining, correctionPasses))
+	}
+	if outside > 0 {
+		result.report.Warnings = append(result.report.Warnings,
+			fmt.Sprintf("post-correction scan found %d actionable event(s) outside the bounded correction scopes; left untouched", outside))
 	}
 	writes, changedQuats, changedSamples, err := buildWrites(points, corrected)
 	if err != nil {
@@ -130,10 +155,164 @@ func analyzeAuto(source *pipeline.Source, opts *options, result *analysis) error
 	result.report.QuaternionsChanged = changedQuats
 	result.report.SamplesChanged = changedSamples
 
-	before, after := scoreEvents(times, values, corrected, detected.Events)
+	before, after := scoreEvents(times, values, corrected, result.report.Events)
 	result.report.ScoreBefore = before
 	result.report.ScoreAfter = after
 	return nil
+}
+
+const maxAutoCorrectionPasses = 3
+
+// autoCorrect rescans after each pass. Residual events near an existing scope
+// remain authorized; newly exposed smoothing events may extend the scope only
+// while its time union stays below --max-affected. Newly detected dropouts are
+// never added here.
+func autoCorrect(points []pipeline.Point, initial *detect.Result, params detect.Params, options correct.EnvelopeOptions, maxAffected float64) ([]quat.Q, int, *detect.Result, []detect.Event, []detect.Event, error) {
+	times := pipeline.Times(points)
+	working := pipeline.Values(points)
+	current := initial
+	lastScan := initial
+	passes := 0
+	padding := math.Max(params.GapSeconds, params.EnvelopeBlurSeconds)
+	scopes := actionableEvents(initial.Events)
+	discovered := []detect.Event{}
+	limitSeconds := initial.DurationSeconds * maxAffected
+	if used := eventUnionSeconds(scopes); limitSeconds < used {
+		limitSeconds = used
+	}
+
+	for passes < maxAutoCorrectionPasses && hasActionableEvents(current.Events) {
+		next, err := correct.Envelope(times, working, current, options)
+		if err != nil {
+			return nil, passes, current, discovered, scopes, err
+		}
+		working = quantizeQuaternions(next)
+		passes++
+
+		rescannedPoints := make([]pipeline.Point, len(points))
+		copy(rescannedPoints, points)
+		for index := range rescannedPoints {
+			rescannedPoints[index].Values = working[index]
+		}
+		rescanned, err := detect.Run(rescannedPoints, params)
+		if err != nil {
+			return nil, passes, current, discovered, scopes, err
+		}
+		lastScan = rescanned
+		selected := make([]detect.Event, 0, len(rescanned.Events))
+		for _, event := range rescanned.Events {
+			if event.Action != detect.ActionSmooth {
+				continue
+			}
+			if eventMatchesScope(event, scopes, padding) {
+				selected = append(selected, event)
+				continue
+			}
+			candidateScopes := append(append([]detect.Event(nil), scopes...), event)
+			if eventUnionSeconds(candidateScopes) > limitSeconds {
+				continue
+			}
+			event.Note = fmt.Sprintf("newly exposed after correction pass %d", passes)
+			scopes = append(scopes, event)
+			discovered = append(discovered, event)
+			selected = append(selected, event)
+		}
+		if len(selected) == 0 {
+			return working, passes, rescanned, discovered, scopes, nil
+		}
+		copyResult := *rescanned
+		copyResult.Events = selected
+		current = &copyResult
+	}
+	return working, passes, lastScan, discovered, scopes, nil
+}
+
+func quantizeQuaternions(values []quat.Q) []quat.Q {
+	output := make([]quat.Q, len(values))
+	for index, value := range values {
+		for component := range value {
+			output[index][component] = float64(float32(value[component]))
+		}
+	}
+	return output
+}
+
+func hasActionableEvents(events []detect.Event) bool {
+	for _, event := range events {
+		if event.Action != detect.ActionNone {
+			return true
+		}
+	}
+	return false
+}
+
+func actionableEvents(events []detect.Event) []detect.Event {
+	actionable := make([]detect.Event, 0, len(events))
+	for _, event := range events {
+		if event.Action != detect.ActionNone {
+			actionable = append(actionable, event)
+		}
+	}
+	return actionable
+}
+
+func eventMatchesScope(event detect.Event, scopes []detect.Event, paddingSeconds float64) bool {
+	for _, scope := range scopes {
+		if eventsOverlap(event, scope, paddingSeconds) {
+			return true
+		}
+	}
+	return false
+}
+
+func eventUnionSeconds(events []detect.Event) float64 {
+	if len(events) == 0 {
+		return 0
+	}
+	ranges := append([]detect.Event(nil), events...)
+	sort.SliceStable(ranges, func(a, b int) bool {
+		return ranges[a].StartSeconds < ranges[b].StartSeconds
+	})
+	total := 0.0
+	start, end := ranges[0].StartSeconds, ranges[0].EndSeconds
+	for _, event := range ranges[1:] {
+		if event.StartSeconds <= end {
+			end = math.Max(end, event.EndSeconds)
+			continue
+		}
+		total += math.Max(0, end-start)
+		start, end = event.StartSeconds, event.EndSeconds
+	}
+	return total + math.Max(0, end-start)
+}
+
+func residualEventCounts(result *detect.Result, original []detect.Event, paddingSeconds float64) (inside, outside int) {
+	if result == nil {
+		return 0, 0
+	}
+	for _, event := range result.Events {
+		if event.Action == detect.ActionNone {
+			continue
+		}
+		matched := false
+		for _, scope := range original {
+			if scope.Action != detect.ActionNone && eventsOverlap(event, scope, paddingSeconds) {
+				matched = true
+				break
+			}
+		}
+		if matched {
+			inside++
+		} else {
+			outside++
+		}
+	}
+	return inside, outside
+}
+
+func eventsOverlap(a, b detect.Event, paddingSeconds float64) bool {
+	return a.StartSeconds <= b.EndSeconds+paddingSeconds &&
+		a.EndSeconds >= b.StartSeconds-paddingSeconds
 }
 
 // analyzeRanges is the manual path, and the golden-parity path.
@@ -379,6 +558,14 @@ func collapseWrites(writes []patch.Write) []patch.Write {
 // scoreEvents measures the residual reduction over the corrected regions only.
 // Averaging over the whole clip would dilute a real improvement to nothing.
 func scoreEvents(times []float64, before, after []quat.Q, events []detect.Event) (float64, float64) {
+	beforeScorer, err := correct.PrepareAngularAcceleration(times, before)
+	if err != nil {
+		return 0, 0
+	}
+	afterScorer, err := correct.PrepareAngularAcceleration(times, after)
+	if err != nil {
+		return 0, 0
+	}
 	weightedBefore, weightedAfter, total := 0.0, 0.0, 0.0
 	for _, event := range events {
 		if event.Action == detect.ActionNone {
@@ -388,14 +575,8 @@ func scoreEvents(times []float64, before, after []quat.Q, events []detect.Event)
 		if weight <= 0 {
 			continue
 		}
-		scoreBefore, err := correct.AngularAccelerationScore(times, before, event.StartSeconds, event.EndSeconds)
-		if err != nil {
-			continue
-		}
-		scoreAfter, err := correct.AngularAccelerationScore(times, after, event.StartSeconds, event.EndSeconds)
-		if err != nil {
-			continue
-		}
+		scoreBefore := beforeScorer.Score(event.StartSeconds, event.EndSeconds)
+		scoreAfter := afterScorer.Score(event.StartSeconds, event.EndSeconds)
 		weightedBefore += scoreBefore * weight
 		weightedAfter += scoreAfter * weight
 		total += weight

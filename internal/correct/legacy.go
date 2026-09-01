@@ -8,6 +8,7 @@ package correct
 
 import (
 	"math"
+	"sort"
 
 	"github.com/steamvogue/djgyrofix/internal/quat"
 )
@@ -188,21 +189,31 @@ func nearestIndex(times []float64, target float64) int {
 // window, in degrees per second squared expressed in radians per second — the
 // reference's before/after quality metric, ported unchanged so the reported
 // improvement percentage matches.
-func AngularAccelerationScore(times []float64, quaternions []quat.Q, start, end float64) (float64, error) {
+// AccelerationScorer normalizes and differentiates one quaternion track once.
+// Individual event scores then inspect only the accelerations in that event,
+// rather than traversing the full track again.
+type AccelerationScorer struct {
+	leftTimes  []float64
+	rightTimes []float64
+	values     []float64
+}
+
+// PrepareAngularAcceleration builds a reusable event scorer in O(samples).
+func PrepareAngularAcceleration(times []float64, quaternions []quat.Q) (*AccelerationScorer, error) {
+	if len(times) != len(quaternions) {
+		return nil, Error("time and quaternion arrays have different lengths")
+	}
 	normalized := make([]quat.Q, len(quaternions))
 	for index, value := range quaternions {
 		unit, err := quat.Normalize(value)
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
 		normalized[index] = unit
 	}
 	type velocity struct{ time, value float64 }
 	var velocities []velocity
 	for index := 1; index < len(times); index++ {
-		if !(start <= times[index] && times[index] <= end) {
-			continue
-		}
 		interval := times[index] - times[index-1]
 		if interval <= 0 {
 			continue
@@ -211,15 +222,43 @@ func AngularAccelerationScore(times []float64, quaternions []quat.Q, start, end 
 		angle := 2.0 * math.Acos(cosine)
 		velocities = append(velocities, velocity{times[index], angle / interval})
 	}
-	var accelerations []float64
+	scorer := &AccelerationScorer{}
 	for index := 0; index+1 < len(velocities); index++ {
 		interval := velocities[index+1].time - velocities[index].time
 		if interval > 0 {
-			accelerations = append(accelerations, math.Abs(velocities[index+1].value-velocities[index].value)/interval)
+			scorer.leftTimes = append(scorer.leftTimes, velocities[index].time)
+			scorer.rightTimes = append(scorer.rightTimes, velocities[index+1].time)
+			scorer.values = append(scorer.values,
+				math.Abs(velocities[index+1].value-velocities[index].value)/interval)
 		}
 	}
-	if len(accelerations) == 0 {
-		return 0, nil
+	return scorer, nil
+}
+
+// Score returns the median absolute angular acceleration in [start, end].
+func (s *AccelerationScorer) Score(start, end float64) float64 {
+	if s == nil || len(s.values) == 0 || end < start {
+		return 0
 	}
-	return quat.Median(accelerations), nil
+	first := sort.Search(len(s.leftTimes), func(index int) bool {
+		return s.leftTimes[index] >= start
+	})
+	values := make([]float64, 0)
+	for index := first; index < len(s.values) && s.rightTimes[index] <= end; index++ {
+		values = append(values, s.values[index])
+	}
+	if len(values) == 0 {
+		return 0
+	}
+	return quat.Median(values)
+}
+
+// AngularAccelerationScore is the compatibility wrapper for callers scoring a
+// single range. Multi-event callers should prepare one scorer and reuse it.
+func AngularAccelerationScore(times []float64, quaternions []quat.Q, start, end float64) (float64, error) {
+	scorer, err := PrepareAngularAcceleration(times, quaternions)
+	if err != nil {
+		return 0, err
+	}
+	return scorer.Score(start, end), nil
 }

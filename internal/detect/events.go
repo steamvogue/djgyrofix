@@ -13,13 +13,14 @@ import (
 // bridging a genuine impact fabricates an orientation the camera never had, and
 // Gyroflow will then mis-correct with full confidence.
 //
-// Four independent tests, any of which condemns a sample:
+// Three evidence paths may condemn a sample:
 //
-//  1. Implied angular rate above IMU full scale.
+//  1. Paired opposing rate excursions that return to the prior trajectory.
 //  2. Raw quaternion norm far from unity, before normalization.
 //  3. A timestamp discontinuity or a duplicate decode time.
-//  4. A single-sample excursion that immediately reverses — the signature of
-//     one corrupted quaternion between two good ones.
+//
+// The paired excursion may exceed full scale or form a large under-range
+// reversal. A lone over-rate step is never bridgeable evidence by itself.
 func plausibilityGate(times []float64, raw []quat.Q, velocities []vec3, interval float64, params Params) []bool {
 	implausible := make([]bool, len(raw))
 	speeds := make([]float64, len(velocities))
@@ -63,13 +64,15 @@ func plausibilityGate(times []float64, raw []quat.Q, velocities []vec3, interval
 	for position := 0; position < len(over); position++ {
 		entry := over[position]
 		if position+1 < len(over) && over[position+1]-entry <= maxRun {
-			for index := entry; index < over[position+1]; index++ {
+			returnIndex := over[position+1]
+			if !verifiedReturn(times, raw, velocities, speeds, entry, returnIndex, params) {
+				continue
+			}
+			for index := entry; index < returnIndex; index++ {
 				implausible[index] = true
 			}
 			position++
-			continue
 		}
-		implausible[entry] = true
 	}
 
 	// A one-sample glitch can also stay under full scale while still reversing
@@ -80,17 +83,67 @@ func plausibilityGate(times []float64, raw []quat.Q, velocities []vec3, interval
 		if speeds[index] < reversalFloor || speeds[index+1] < reversalFloor {
 			continue
 		}
-		if dot3(velocities[index], velocities[index+1]) >= 0 {
-			continue
-		}
-		// Confirm the track settles, rather than genuinely moving and coming
-		// back under its own momentum.
-		if index+2 < len(speeds) && speeds[index+2] > reversalFloor {
+		if !verifiedReturn(times, raw, velocities, speeds, index, index+1, params) {
 			continue
 		}
 		implausible[index] = true
 	}
 	return implausible
+}
+
+// verifiedReturn distinguishes a corrupt plateau from rapid real motion. Two
+// nearby over-rate transitions are only bridgeable when the second transition
+// reverses the first, lands back near the pre-entry attitude, and the track has
+// settled afterwards. An isolated over-rate step is reportable as a transient,
+// but is never enough evidence to reconstruct samples.
+func verifiedReturn(times []float64, raw []quat.Q, velocities []vec3, speeds []float64, entry, returnIndex int, params Params) bool {
+	if entry <= 0 || returnIndex <= entry || returnIndex >= len(raw) {
+		return false
+	}
+	if dot3(velocities[entry], velocities[returnIndex]) >= 0 {
+		return false
+	}
+
+	before, err := quat.Normalize(raw[entry-1])
+	if err != nil {
+		return false
+	}
+	after, err := quat.Normalize(raw[returnIndex])
+	if err != nil {
+		return false
+	}
+	cosine := math.Min(1, math.Max(-1, math.Abs(quat.Dot(before, after))))
+	returnDegrees := quat.Degrees(2 * math.Acos(cosine))
+	elapsed := times[returnIndex] - times[entry-1]
+	if elapsed <= 0 {
+		return false
+	}
+	localSpeed := 0.0
+	if entry > 1 {
+		localSpeed = math.Max(localSpeed, speeds[entry-1])
+	}
+	if returnIndex+1 < len(speeds) {
+		localSpeed = math.Max(localSpeed, speeds[returnIndex+1])
+	}
+	returnTolerance := math.Max(1.0, 0.5+3.0*localSpeed*elapsed)
+	if returnDegrees > returnTolerance {
+		return false
+	}
+
+	// Corrupt multi-sample runs normally form a nearly stationary wrong
+	// plateau. Sustained large motion between or immediately after the two
+	// transitions is a burst, not a safe interpolation target.
+	quietLimit := math.Max(params.MotionDPS, params.IMUFullScale*0.25)
+	for index := entry + 1; index < returnIndex; index++ {
+		if speeds[index] > quietLimit {
+			return false
+		}
+	}
+	settleLimit := params.IMUFullScale * 0.5 / params.Sensitivity
+	if returnIndex+1 < len(speeds) && speeds[returnIndex+1] > settleLimit {
+		return false
+	}
+	return true
 }
 
 // dropoutEvents turns runs of implausible samples into events. A run longer
@@ -125,6 +178,9 @@ func dropoutEvents(times []float64, implausible []bool, params Params) []Event {
 			// A single sample has zero duration; give it the bin width so it
 			// is visible in reports and in the affected-duration total.
 			event.EndSeconds = event.StartSeconds + params.BinSeconds
+		}
+		if event.EndSeconds > times[len(times)-1] {
+			event.EndSeconds = times[len(times)-1]
 		}
 		length := last - first + 1
 		switch {
@@ -215,8 +271,8 @@ func classify(bins binned, baselines, thresholds, times []float64, rawFirst, raw
 	if last > len(bins.metrics)-1 {
 		last = len(bins.metrics) - 1
 	}
-	startSeconds := bins.times[first] - bins.width/2.0
-	endSeconds := bins.times[last] + bins.width/2.0
+	startSeconds := math.Max(times[0], bins.times[first]-bins.width/2.0)
+	endSeconds := math.Min(times[len(times)-1], bins.times[last]+bins.width/2.0)
 
 	firstPoint, lastPoint := pointSpan(bins, first, last)
 	if firstPoint < 0 || lastPoint < 0 {
@@ -413,13 +469,10 @@ func severityLabel(score float64) string {
 	}
 }
 
-// weightEnvelope builds the continuous correction weight w(t) of plan §6.2.
-//
-// This replaces the reference's binary time windows and its whole
-// edge-correction block. Because w falls to zero continuously at every event
-// edge by construction, there is no discontinuity left to patch over — the
-// start/end correction quaternions and their boundary smoothstep are not
-// ported, they are deleted.
+// weightEnvelope builds a confidence floor across each confirmed event and a
+// smooth shoulder outside it. The detection threshold answers whether an event
+// exists; it must not also make correction vanish exactly where the event first
+// crosses that threshold.
 func weightEnvelope(bins binned, thresholds []float64, times []float64, events []Event, params Params, interval float64) []float64 {
 	weights := make([]float64, len(times))
 	binWeights := make([]float64, len(bins.metrics))
@@ -432,34 +485,49 @@ func weightEnvelope(bins binned, thresholds []float64, times []float64, events [
 		binWeights[index] = quat.Smoothstep(math.Min(1.0, math.Max(0.0, excess)))
 	}
 
-	// Mask to the bins of events that will actually be smoothed. Everything
-	// else — motion, dropouts, sub-severity events, quiet stretches — stays at
-	// zero and is never touched.
-	masked := make([]float64, len(binWeights))
+	shoulderPoints := quat.PyRound(params.EnvelopeBlurSeconds / interval)
+	if shoulderPoints < 1 {
+		shoulderPoints = 1
+	}
 	for _, event := range events {
 		if event.Action != ActionSmooth {
 			continue
 		}
-		first := binIndexAt(bins, event.StartSeconds)
-		last := binIndexAt(bins, event.EndSeconds)
-		for index := first; index <= last && index < len(masked); index++ {
-			if index >= 0 && binWeights[index] > masked[index] {
-				masked[index] = binWeights[index]
+		first := max(0, event.FirstPoint)
+		last := min(len(times)-1, event.LastPoint)
+		if last < first {
+			continue
+		}
+		// Confirmed low-severity events still receive half correction. Confidence
+		// rises with severity, while a high-excess bin may lift the entire event
+		// to full correction. One constant core weight matters: changing blend
+		// strength every 10 ms can itself create angular-rate steps.
+		floor := math.Min(1, math.Max(0.5, 0.5+0.1*(event.Severity-5)))
+		coreWeight := floor
+		for index := first; index <= last; index++ {
+			binIndex := binIndexAt(bins, times[index])
+			if binIndex >= 0 && binIndex < len(binWeights) {
+				coreWeight = math.Max(coreWeight, binWeights[binIndex])
+			}
+		}
+		for index := first; index <= last; index++ {
+			weights[index] = math.Max(weights[index], coreWeight)
+		}
+		for offset := 1; offset <= shoulderPoints; offset++ {
+			amount := quat.Smoothstep(1 - float64(offset)/float64(shoulderPoints+1))
+			weight := coreWeight * amount
+			if index := first - offset; index >= 0 && weight > weights[index] {
+				weights[index] = weight
+			}
+			if index := last + offset; index < len(weights) && weight > weights[index] {
+				weights[index] = weight
 			}
 		}
 	}
-
-	for index, time := range times {
-		binIndex := binIndexAt(bins, time)
-		if binIndex >= 0 && binIndex < len(masked) {
-			weights[index] = masked[binIndex]
-		}
+	for index := range weights {
+		weights[index] = math.Min(1, math.Max(0, weights[index]))
 	}
-	radius := quat.PyRound(params.EnvelopeBlurSeconds / interval)
-	if radius < 1 {
-		radius = 1
-	}
-	return boxBlurFloats(weights, radius)
+	return weights
 }
 
 func binIndexAt(bins binned, seconds float64) int {
@@ -471,29 +539,6 @@ func binIndexAt(bins binned, seconds float64) int {
 		return len(bins.metrics) - 1
 	}
 	return index
-}
-
-func boxBlurFloats(values []float64, radius int) []float64 {
-	if radius <= 0 || len(values) < 2 {
-		return values
-	}
-	prefixes := make([]float64, len(values)+1)
-	for index, value := range values {
-		prefixes[index+1] = prefixes[index] + value
-	}
-	output := make([]float64, len(values))
-	for index := range values {
-		first := index - radius
-		if first < 0 {
-			first = 0
-		}
-		last := index + radius + 1
-		if last > len(values) {
-			last = len(values)
-		}
-		output[index] = (prefixes[last] - prefixes[first]) / float64(last-first)
-	}
-	return output
 }
 
 func abs(value int) int {

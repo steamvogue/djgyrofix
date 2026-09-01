@@ -54,7 +54,7 @@ func eventsCovering(result *detect.Result, seconds float64) []detect.Event {
 }
 
 // TestWhipPanProducesNoEvents is the most important test here. A whip-pan is
-// fast rotation with no high-frequency content, and flagging it would mean
+// fast rotation with no short-timescale deviation, and flagging it would mean
 // smoothing footage that was fine. False positives on intentional motion are
 // the main risk of automatic detection.
 func TestWhipPanProducesNoEvents(t *testing.T) {
@@ -107,6 +107,104 @@ func TestJitterIsFoundAndClassified(t *testing.T) {
 	// The derived window must be a jitter-sized one, not the impact range.
 	if event.SmoothingMS < 120 || event.SmoothingMS > 400 {
 		t.Errorf("derived smoothing window %.0f ms is outside the jitter range", event.SmoothingMS)
+	}
+}
+
+func TestVectorChangeJitterIsFoundWithoutFlaggingTheCleanChange(t *testing.T) {
+	clean := run(t, synth.DefectVectorChange, nil, nil)
+	for _, event := range clean.Events {
+		inFixture := event.EndSeconds >= synth.JitterStart-0.8 &&
+			event.StartSeconds <= synth.JitterStart+0.8
+		if inFixture && event.Action != detect.ActionNone {
+			t.Errorf("clean vector change produced actionable %s event at %.3f-%.3f",
+				event.Class, event.StartSeconds, event.EndSeconds)
+		}
+	}
+
+	jitter := run(t, synth.DefectVectorJitter, nil, nil)
+	covering := eventsCovering(jitter, synth.JitterStart+0.25)
+	found := false
+	for _, event := range covering {
+		if event.Action == detect.ActionSmooth {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no smoothing event covers low-frequency vector jitter; events: %+v", jitter.Events)
+	}
+}
+
+func TestOverRateMotionWithoutReturnIsNotABridgeableDropout(t *testing.T) {
+	const count = 400
+	track := make([]quat.Q, count)
+	for index := range track {
+		track[index] = quat.Q{1, 0, 0, 0}
+	}
+	rotation := func(degrees float64) quat.Q {
+		half := degrees * math.Pi / 180 / 2
+		return quat.Q{math.Cos(half), math.Sin(half), 0, 0}
+	}
+	// Two consecutive 3000 degree/second steps are over the configured sensor
+	// rate, but continue in the same direction. They are rapid motion, not the
+	// entry and return edges of a corrupt plateau.
+	track[200] = rotation(15)
+	for index := 201; index < len(track); index++ {
+		track[index] = rotation(30)
+	}
+	result, err := detect.Run(points(track, testRate), detect.Defaults())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Implausible[200] || result.Implausible[201] {
+		t.Fatalf("continuing over-rate motion was marked implausible: [%v %v]",
+			result.Implausible[200], result.Implausible[201])
+	}
+	for _, event := range result.Events {
+		if event.Class == detect.ClassDropout && event.Action == detect.ActionBridge {
+			t.Errorf("continuing over-rate motion became a bridge at %.3f-%.3f",
+				event.StartSeconds, event.EndSeconds)
+		}
+	}
+}
+
+func TestUnequalFastReversalWithoutReturnIsNotABridgeableDropout(t *testing.T) {
+	const count = 400
+	track := make([]quat.Q, count)
+	for index := range track {
+		track[index] = quat.Q{1, 0, 0, 0}
+	}
+	rotation := func(degrees float64) quat.Q {
+		half := degrees * math.Pi / 180 / 2
+		return quat.Q{math.Cos(half), math.Sin(half), 0, 0}
+	}
+	// The track moves out at 1600 degree/second and back at 1200, then settles
+	// two degrees away. Opposing vectors alone do not prove corrupt data.
+	track[200] = rotation(8)
+	for index := 201; index < len(track); index++ {
+		track[index] = rotation(2)
+	}
+	result, err := detect.Run(points(track, testRate), detect.Defaults())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Implausible[200] {
+		t.Fatal("unequal fast reversal was marked implausible without returning to its entry attitude")
+	}
+}
+
+func TestEventBoundsStayWithinTrack(t *testing.T) {
+	result := run(t, synth.DefectJitter, func(options *synth.AttitudeOptions) {
+		options.JitterAt = 29.0
+	}, nil)
+	lastTime := float64(result.QuaternionCount-1) / testRate
+	if len(result.Events) == 0 {
+		t.Fatal("tail fixture produced no events")
+	}
+	for _, event := range result.Events {
+		if event.StartSeconds < 0 || event.EndSeconds > lastTime {
+			t.Errorf("event %.6f-%.6f escapes track 0-%.6f",
+				event.StartSeconds, event.EndSeconds, lastTime)
+		}
 	}
 }
 
@@ -274,6 +372,47 @@ func TestWeightEnvelopeIsZeroOutsideSmoothingEvents(t *testing.T) {
 			t.Fatalf("weight %.4f at index %d is outside [0, 1]", weight, index)
 		}
 	}
+}
+
+func TestConfirmedEventHasMeaningfulCorrectionWeight(t *testing.T) {
+	result := run(t, synth.DefectVectorJitter, nil, nil)
+	positive, total := 0, 0.0
+	for _, event := range result.Events {
+		if event.Action != detect.ActionSmooth {
+			continue
+		}
+		for index := event.FirstPoint; index <= event.LastPoint; index++ {
+			if result.Weights[index] > 0 {
+				positive++
+				total += result.Weights[index]
+			}
+		}
+	}
+	if positive == 0 {
+		t.Fatal("confirmed vector-jitter event has no correction weight")
+	}
+	if average := total / float64(positive); average < 0.5 {
+		t.Errorf("confirmed event average correction weight is %.3f, want at least 0.5", average)
+	}
+}
+
+func TestConfirmedEventCoreUsesOneStableWeight(t *testing.T) {
+	result := run(t, synth.DefectVectorJitter, nil, nil)
+	for _, event := range result.Events {
+		if event.Action != detect.ActionSmooth {
+			continue
+		}
+		minimum, maximum := 1.0, 0.0
+		for index := event.FirstPoint; index <= event.LastPoint; index++ {
+			minimum = math.Min(minimum, result.Weights[index])
+			maximum = math.Max(maximum, result.Weights[index])
+		}
+		if maximum-minimum > 1e-12 {
+			t.Errorf("event core weight varies from %.6f to %.6f", minimum, maximum)
+		}
+		return
+	}
+	t.Fatal("vector-jitter fixture produced no smoothing event")
 }
 
 func TestSensitivityMovesTheThreshold(t *testing.T) {

@@ -1,11 +1,10 @@
-// Package detect finds high-frequency attitude artifacts in a quaternion track
-// and decides which of them are safe to correct.
+// Package detect finds short-timescale attitude deviations in a quaternion
+// track and decides which of them are safe to correct.
 //
 // The discriminator is the residual: angular velocity minus its own low-passed
-// copy. A whip-pan or a flip is smooth fast rotation and cancels out entirely,
-// so only high-frequency content survives. That is what makes automatic
-// detection viable at all — a plain velocity threshold would flag every
-// intentional fast move in the clip.
+// copy. This exposes brief overshoot and ringing after a vector change as well
+// as broadband noise. Smooth fast rotation mostly cancels, which keeps a plain
+// velocity threshold from flagging every intentional fast move in the clip.
 package detect
 
 import (
@@ -23,7 +22,7 @@ const (
 	ClassDropout Class = "dropout"
 	// ClassImpact is a brief single-peaked spike that is physically plausible.
 	ClassImpact Class = "impact"
-	// ClassJitter is sustained multi-peaked high-frequency content.
+	// ClassJitter is sustained multi-peaked transient deviation.
 	ClassJitter Class = "jitter"
 	// ClassMotion is high residual that tracks intentional input. Left alone.
 	ClassMotion Class = "motion"
@@ -106,7 +105,7 @@ func Defaults() Params {
 		MotionRatio:         0.25,
 		MotionDPS:           120,
 		BinSeconds:          0.010,
-		LowpassSeconds:      0.012,
+		LowpassSeconds:      0.060,
 		GapSeconds:          0.20,
 		PadSeconds:          0.02,
 		ShortClipSeconds:    15.0,

@@ -54,7 +54,7 @@ type Report struct {
 	Warnings []string `json:"warnings,omitempty"`
 }
 
-// ImprovementPercent is the reduction in high-frequency residual, on the
+// ImprovementPercent is the reduction in transient residual, on the
 // reference's angular-acceleration metric.
 func (r Report) ImprovementPercent() float64 {
 	if r.ScoreBefore <= 0 {
@@ -228,7 +228,7 @@ func writeTextOne(w *errWriter, report Report) {
 			w.printf("backup:  %s\n", report.BackupPath)
 		}
 		if report.ScoreBefore > 0 {
-			w.printf("high-frequency residual reduced %.1f%%\n", report.ImprovementPercent())
+			w.printf("transient residual reduced %.1f%%\n", report.ImprovementPercent())
 		}
 	} else if report.DryRun && report.Writes > 0 {
 		// Reached from `scan` as well as from a `fix` dry run, so the
