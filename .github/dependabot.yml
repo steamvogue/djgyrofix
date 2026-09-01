@@ -1,0 +1,22 @@
+version: 2
+
+updates:
+  # The tool itself has no module requirements, so there is nothing for
+  # Dependabot to bump there. The Actions in CI are a real supply chain and do
+  # need watching.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns: ['*']
+
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: deps

@@ -1,0 +1,13 @@
+# Normalize line endings so the Windows CI job sees the same bytes as the others.
+* text=auto eol=lf
+
+*.sh   text eol=lf
+*.go   text eol=lf
+*.md   text eol=lf
+*.yml  text eol=lf
+
+# Generated fixtures: hex-encoded float bits, not reviewable as a diff.
+testdata/golden/smoothing.json linguist-generated=true -diff
+
+# Keep GitHub's language stats about the tool, not its fixtures.
+testdata/** linguist-vendored=true

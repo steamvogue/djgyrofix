@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or idea
+    url: https://github.com/steamvogue/djgyrofix/discussions
+    about: For anything that is not a bug report or a concrete feature request.
+  - name: Upstream Python tool
+    url: https://github.com/kim2160/DJIGyroFix
+    about: djgyrofix is a Go port of DJIGyroFix. Report issues with the original tool there.

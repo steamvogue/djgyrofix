@@ -1,0 +1,36 @@
+name: Feature request
+description: Suggest something djgyrofix should do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do that djgyrofix makes hard or impossible?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like it to do
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you tried instead
+      description: Existing flags, other tools, manual workarounds.
+    validations:
+      required: false
+
+  - type: markdown
+    attributes:
+      value: |
+        Two things are deliberately out of scope, so it is worth saying why if
+        you are asking for them:
+
+        - **Re-encoding or remuxing.** `-c copy` drops the private `djmd` track
+          and any remux rewrites `moov`, invalidating every sample offset.
+        - **A GUI.** The upstream Python tool has one; this is the CLI.

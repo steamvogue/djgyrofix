@@ -1,0 +1,32 @@
+# Configuration for the `typos` spell checker.
+
+[files]
+# Golden fixtures are hex-encoded float bits, so every four-character run is a
+# spelling candidate and none of them are words.
+extend-exclude = ["testdata/golden/*.json"]
+
+[default.extend-words]
+# ISO-BMFF box names, not misspellings.
+trak = "trak"
+stbl = "stbl"
+stsd = "stsd"
+stsc = "stsc"
+stsz = "stsz"
+stco = "stco"
+stts = "stts"
+mdia = "mdia"
+minf = "minf"
+mdhd = "mdhd"
+tkhd = "tkhd"
+hdlr = "hdlr"
+moov = "moov"
+moof = "moof"
+mvex = "mvex"
+mdat = "mdat"
+ftyp = "ftyp"
+djmd = "djmd"
+
+[default.extend-identifiers]
+# "mis-correct" — Gyroflow correcting in the wrong direction — is a real
+# hyphenated form, not a typo for "miss".
+mis = "mis"

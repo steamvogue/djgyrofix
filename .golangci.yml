@@ -1,0 +1,63 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - copyloopvar
+    - durationcheck
+    - errorlint
+    - gocritic
+    - misspell
+    - nilerr
+    - noctx
+    - revive
+    - unconvert
+    - usestdlibvars
+    - wastedassign
+    - whitespace
+
+  settings:
+    errcheck:
+      # Best-effort cleanup and diagnostic output are checked deliberately at
+      # the call site or intentionally ignored; a blanket rule here would just
+      # produce noisy `_ =` assignments.
+      exclude-functions:
+        - (*os.File).Close
+        - (io.Closer).Close
+    revive:
+      rules:
+        - name: exported
+        - name: package-comments
+        - name: var-naming
+          arguments:
+            - []
+            - []
+            - - upperCaseConst: true
+    gocritic:
+      disabled-checks:
+        # The numeric core is written for readability against the Python
+        # reference it must match line for line, not for idiomatic brevity.
+        - ifElseChain
+        - singleCaseSwitch
+
+  exclusions:
+    rules:
+      # Tests build deliberately malformed input and assert on it; several
+      # checks fire on that by design.
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gocritic
+          - noctx
+      # unconvert cannot know that these conversions are rounding barriers
+      # rather than redundant casts. Removing one silently breaks byte parity
+      # with the Python reference, so this exclusion is load-bearing — see
+      # TestNumericCoreIsNotFused.
+      - path: internal/(quat|detect)/
+        linters:
+          - unconvert
+
+formatters:
+  enable:
+    - gofmt

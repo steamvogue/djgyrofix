@@ -1,0 +1,138 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (must already exist)'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  # A release must not ship a binary that never passed its own tests, and the
+  # parity gate is the one that proves this port still matches the reference.
+  verify:
+    name: verify before releasing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          check-latest: true
+      - run: go vet ./...
+      - run: go test ./...
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: clone the reference implementation
+        run: git clone --depth 1 https://github.com/kim2160/DJIGyroFix.git "$RUNNER_TEMP/reference"
+      - name: golden parity
+        run: ./testdata/golden/parity.sh "$RUNNER_TEMP/reference"
+
+  build:
+    name: build ${{ matrix.goos }}/${{ matrix.goarch }}
+    needs: verify
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: darwin, goarch: arm64 }
+          - { goos: windows, goarch: amd64 }
+          - { goos: windows, goarch: arm64 }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          check-latest: true
+
+      - name: build
+        id: build
+        env:
+          CGO_ENABLED: '0'
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          version="${{ github.event.inputs.tag || github.ref_name }}"
+          name="djgyrofix-${version}-${GOOS}-${GOARCH}"
+          binary="djgyrofix"
+          if [ "$GOOS" = "windows" ]; then binary="djgyrofix.exe"; fi
+          mkdir -p "build/$name"
+          # -trimpath keeps absolute build paths out of the binary, which is
+          # what makes the output reproducible for anyone rebuilding the tag.
+          go build -trimpath -ldflags="-s -w" -o "build/$name/$binary" ./cmd/djgyrofix
+          cp README.md LICENSE "build/$name/"
+          cd build
+          if [ "$GOOS" = "windows" ]; then
+            zip -r "../$name.zip" "$name"
+            echo "asset=$name.zip" >> "$GITHUB_OUTPUT"
+          else
+            tar czf "../$name.tar.gz" "$name"
+            echo "asset=$name.tar.gz" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: smoke test the linux/amd64 build
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        run: |
+          version="${{ github.event.inputs.tag || github.ref_name }}"
+          bin="build/djgyrofix-${version}-linux-amd64/djgyrofix"
+          "$bin" version
+          # Generate a fixture with a known dropout, then confirm the release
+          # binary finds it, patches it, and reverts byte for byte.
+          go run ./tools/mkfixture -o "$RUNNER_TEMP/smoke.MP4" -kind mixed -seconds 20
+          sha256sum "$RUNNER_TEMP/smoke.MP4" > "$RUNNER_TEMP/before.sha"
+          "$bin" scan "$RUNNER_TEMP/smoke.MP4"
+          "$bin" fix --apply "$RUNNER_TEMP/smoke.MP4"
+          "$bin" verify "$RUNNER_TEMP/smoke.MP4"
+          "$bin" revert "$RUNNER_TEMP/smoke.MP4"
+          sha256sum -c "$RUNNER_TEMP/before.sha"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.build.outputs.asset }}
+          path: ${{ steps.build.outputs.asset }}
+          if-no-files-found: error
+
+  publish:
+    name: publish release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: checksums
+        run: |
+          cd artifacts
+          sha256sum ./* > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "djgyrofix $TAG" \
+            --generate-notes \
+            --verify-tag \
+            artifacts/*

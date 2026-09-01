@@ -1,0 +1,15 @@
+# Build output
+/djgyrofix
+/dist/
+/mkfixture
+
+# Test fixtures and scratch video, which are large and regenerable
+*.MP4
+*.MOV
+*.mp4
+*.mov
+*.gyrofix.json
+*.orig
+
+# Go fuzzing corpus additions
+/**/testdata/fuzz/

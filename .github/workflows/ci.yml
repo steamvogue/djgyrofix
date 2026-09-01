@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# A new push to the same branch makes the in-flight run obsolete. The parity
+# and fuzz jobs are not cheap, so cancel rather than queue.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          check-latest: true
+      - name: gofmt
+        if: runner.os != 'Windows'
+        run: |
+          unformatted=$(gofmt -l cmd internal tools)
+          if [ -n "$unformatted" ]; then
+            echo "not gofmt'd:"; echo "$unformatted"; exit 1
+          fi
+      - name: vet
+        run: go vet ./...
+      - name: test
+        run: go test ./...
+      # The race detector matters here: `--jobs` runs whole files in parallel
+      # and they share nothing, which is a claim worth checking.
+      - name: test -race
+        run: go test -race ./...
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          check-latest: true
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: v2.13.2
+
+  crossbuild:
+    name: build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        goos: [linux, darwin, windows]
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          check-latest: true
+      - name: build
+        env:
+          CGO_ENABLED: '0'
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: go build -trimpath -ldflags="-s -w" -o /dev/null ./cmd/djgyrofix
+
+  fuzz:
+    name: fuzz parsers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          check-latest: true
+      # Both parsers walk length fields taken straight from the file, so a
+      # short fuzz run on every change is cheap insurance against a panic or an
+      # unbounded allocation on a corrupt clip.
+      - run: go test -run xxx -fuzz FuzzParseTracks -fuzztime 90s ./internal/mp4/
+      - run: go test -run xxx -fuzz FuzzQuaternions -fuzztime 90s ./internal/djiproto/
+
+  parity:
+    name: golden parity against the Python reference
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          check-latest: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: clone the reference implementation
+        run: git clone --depth 1 https://github.com/kim2160/DJIGyroFix.git "$RUNNER_TEMP/reference"
+      # With detection disabled and explicit --ranges, output must be
+      # byte-identical to gyrofix.cli. This is the gate that guards the port.
+      - name: parity sweep
+        run: ./testdata/golden/parity.sh "$RUNNER_TEMP/reference"
