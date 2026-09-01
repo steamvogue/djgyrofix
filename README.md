@@ -9,6 +9,17 @@
 A dependency-free Go CLI that detects and corrects transient attitude
 deviations in DJI MP4/MOV metadata, in place, with exact revert.
 
+## What's new in 0.4.0
+
+- `--style cinematic | normal | freestyle` sets the rolling baseline window to
+  ±5 s, ±12 s or ±20 s. See [Flight style](#flight-style).
+- **The default window is now ±12 s, up from ±5 s.** A burst shorter than the
+  window inflates the threshold meant to catch it; a real 2-second burst was
+  only 12% detected. `--style cinematic` restores the old behaviour exactly.
+- Residual reduction is reported clip-wide as well as inside the corrected
+  regions. The in-region figure alone read 91.6% on footage that was still
+  visibly shaking.
+
 ## What's new in 0.3.0
 
 - Every automatic scan and fix ends in a
@@ -27,8 +38,8 @@ deviations in DJI MP4/MOV metadata, in place, with exact revert.
 - The predicted residual reduction is printed on a dry run, where it was
   already computed and then discarded.
 
-The current release is 0.3.2, which is 0.3.0 plus two fixes to the diagnosis
-found by running it on real footage. See the [0.3.0 changelog](CHANGELOG.md#030--2026-09-01) for
+The 0.3.x releases added the diagnosis and fixed two defects in it found by
+running it on real footage. See the [0.3.0 changelog](CHANGELOG.md#030--2026-09-01) for
 every user-visible change. The 0.2.0 detector rework is
 [recorded there too](CHANGELOG.md#020--2026-09-01); the superseded
 implementation remains on `study`, and every push to `main` publishes
@@ -142,17 +153,17 @@ diagnosis: 4 correctable events over 1.49 s (4.98% of the clip) — this is what
   djgyrofix is for
   noise floor 0.6 °/s typical, 0.6 °/s p90 — quiet enough that these events
   stand out as artifacts
-  predicted residual reduction 100.0%, measured inside the corrected regions
-  only
-  try --no-bridge — if you would rather no orientation were reconstructed at
-      all
+  predicted residual reduction 10.1% clip-wide, 100.0% inside the
+  corrected regions
+  try --no-bridge — if you would rather no orientation were reconstructed
+      at all
   next: djgyrofix fix --apply sample.MP4
 
 $ djgyrofix fix --apply sample.MP4
 ...
 patched 418 quaternions in 105 samples, 6680 bytes
 journal: sample.MP4.gyrofix.json
-transient residual reduced 100.0%
+transient residual reduced 10.1% clip-wide, 100.0% inside the corrected regions
 
 $ djgyrofix revert sample.MP4
 sample.MP4: restored, matches original digest — 6680 bytes (1670 writes)
@@ -251,8 +262,8 @@ page. Open the newest successful run, scroll to **Artifacts**, and download
 
 ```bash
 # Linux / macOS
-tar xzf djgyrofix-v0.3.2-linux-amd64.tar.gz
-sudo install djgyrofix-v0.3.2-linux-amd64/djgyrofix /usr/local/bin/
+tar xzf djgyrofix-v0.4.0-linux-amd64.tar.gz
+sudo install djgyrofix-v0.4.0-linux-amd64/djgyrofix /usr/local/bin/
 djgyrofix version
 ```
 
@@ -290,7 +301,7 @@ djgyrofix version
 
 The version is resolved from the build rather than hardcoded, so it cannot
 disagree with the release it came from. A release binary reports its tag
-(`0.3.2`); one built from a working tree reports the commit
+(`0.4.0`); one built from a working tree reports the commit
 (`devel+a1b2c3d4e5f6`, with `.dirty` appended for uncommitted changes). Whatever
 it reports is also what gets written into every patch journal, so a journal
 always names the exact build that produced it.
@@ -309,9 +320,10 @@ always names the exact build that produced it.
 
 ```
   --profile string        conservative | balanced | aggressive   (default "balanced")
+  --style string          cinematic | normal | freestyle         (default "normal")
   --sensitivity float     scales all thresholds, 0.1-3.0         (default 1.0)
   --mad-k float           Hampel sigma multiplier                (default 5.0)
-  --baseline-window dur   rolling baseline half-width            (default 5s)
+  --baseline-window dur   rolling baseline half-width            (default: from --style)
   --floor-dps float       absolute residual floor, °/s           (default 60)
   --min-severity float    ignore events below this score, 0-10   (default 5.0)
   --imu-full-scale float  plausibility gate, °/s                 (default 2000)
@@ -418,6 +430,36 @@ Correction is rescanned for at most three passes. Newly exposed smoothing events
 may join later passes only while the union of correction ranges remains under
 `--max-affected`; a newly detected dropout is never added automatically.
 
+## Flight style
+
+`--style` sets one thing: the rolling baseline half-width. It is a separate axis
+from `--profile`, which sets how strict detection is.
+
+| Style | Window | For |
+|---|---|---|
+| `cinematic` | ±5 s | Smooth cruising and slow pans |
+| `normal` | ±12 s | Ordinary mixed flying. **The default.** |
+| `freestyle` | ±20 s | Flips, rolls, hard direction changes |
+
+The window has to be long enough that a burst of ringing cannot dominate its own
+neighbourhood. The threshold is `baseline + k·σ` over a sliding window, so a
+two-second burst inside a ten-second window supplies a fifth of the samples that
+σ is computed from — it raises the very bar meant to catch it, and hides.
+
+That is not hypothetical. On the real clip in [the findings](docs/FINDINGS.md) a
+burst at 79–81 s sat at 165–235 °/s against a threshold of 605 °/s, and only 12%
+of it was ever flagged. At ±20 s that rose to 46%, and correction took the
+window's residual from 238.6 °/s RMS down to 14.3 °/s.
+
+Violent flying needs the long window because that is where sustained ringing
+lives. Smooth flying needs less of it, not more: long cruising passes give a
+stable local baseline that a short, more locally adaptive window tracks better.
+
+`--baseline-window` still takes a duration directly and overrides the style. The
+window is capped at a quarter of the clip either way — a half-width reaching
+past half the footage is not rolling any more, and would undo the whole point of
+a local baseline on a short clip.
+
 ## Reading the diagnosis
 
 Every automatic scan or fix ends in a diagnosis block. It exists because the
@@ -437,6 +479,14 @@ diagnosis: 33% of this clip is an airframe problem rather than a metadata one
 
 The verdict comes first, then the measurements behind it, then any flags worth
 trying with the measurement that suggests them, then the command to run.
+
+**Why two improvement figures.** The clip-wide number is the honest headline:
+it falls when correction misses something. The in-region number cannot, because
+it is measured only where detection looked — on the real clip it read 91.6%
+while a two-second burst it had covered 12% of was still plainly visible. Read
+them as a pair. A low clip-wide figure on an otherwise clean clip is not a
+fault; it means there was little wrong to begin with, so fixing it perfectly
+moved the overall average very little.
 
 **Why the noise floor is reported as percentiles.** The rolling Hampel
 threshold is what makes whole-file detection viable, and it has a consequence
@@ -505,7 +555,7 @@ sidecar journal instead:
 // DJI_0042.MP4.gyrofix.json
 {
   "version": 1,
-  "tool": "djgyrofix 0.3.2",
+  "tool": "djgyrofix 0.4.0",
   "source":   { "name": "DJI_0042.MP4", "size": 21474836480, "mtime": "..." },
   "track":    { "variant": "wm169", "timescale": 1000, "samples": 36012 },
   "metadata_digest": "sha256:...",   // djmd sample bytes only, pre-patch

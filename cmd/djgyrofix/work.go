@@ -167,9 +167,11 @@ func analyzeAuto(source *pipeline.Source, opts *options, result *analysis) error
 	result.report.QuaternionsChanged = changedQuats
 	result.report.SamplesChanged = changedSamples
 
-	before, after := scoreEvents(times, values, corrected, result.report.Events)
+	before, after, clipBefore, clipAfter := scoreEvents(times, values, corrected, result.report.Events)
 	result.report.ScoreBefore = before
 	result.report.ScoreAfter = after
+	result.report.ClipScoreBefore = clipBefore
+	result.report.ClipScoreAfter = clipAfter
 
 	result.report.Advice = adviseReport(&result.report, params, opts, remaining)
 	return nil
@@ -180,22 +182,23 @@ func analyzeAuto(source *pipeline.Source, opts *options, result *analysis) error
 // regions still detectable — only exist once correction has been planned.
 func adviseReport(rep *report.Report, params detect.Params, opts *options, residualRegions int) *advise.Advice {
 	advice := advise.Evaluate(advise.Input{
-		File:               rep.File,
-		DurationSeconds:    rep.DurationSeconds,
-		Events:             rep.Events,
-		AffectedSeconds:    rep.AffectedSeconds,
-		AffectedFraction:   rep.AffectedFraction,
-		Noise:              rep.Noise,
-		NearMiss:           rep.NearMissEvents,
-		RollingBaseline:    rep.RollingBaseline,
-		ShortClipSeconds:   params.ShortClipSeconds,
-		Profile:            params.Profile,
-		Sensitivity:        params.Sensitivity,
-		MinSeverity:        params.MinSeverity,
-		MaxAffected:        opts.maxAffected,
-		ImprovementPercent: rep.ImprovementPercent(),
-		Scored:             rep.ScoreBefore > 0,
-		ResidualRegions:    residualRegions,
+		File:                   rep.File,
+		DurationSeconds:        rep.DurationSeconds,
+		Events:                 rep.Events,
+		AffectedSeconds:        rep.AffectedSeconds,
+		AffectedFraction:       rep.AffectedFraction,
+		Noise:                  rep.Noise,
+		NearMiss:               rep.NearMissEvents,
+		RollingBaseline:        rep.RollingBaseline,
+		ShortClipSeconds:       params.ShortClipSeconds,
+		Profile:                params.Profile,
+		Sensitivity:            params.Sensitivity,
+		MinSeverity:            params.MinSeverity,
+		MaxAffected:            opts.maxAffected,
+		ImprovementPercent:     rep.ImprovementPercent(),
+		ClipImprovementPercent: rep.ClipImprovementPercent(),
+		Scored:                 rep.ScoreBefore > 0,
+		ResidualRegions:        residualRegions,
 	})
 	return &advice
 }
@@ -661,16 +664,25 @@ func collapseWrites(writes []patch.Write) []patch.Write {
 	return collapsed
 }
 
-// scoreEvents measures the residual reduction over the corrected regions only.
+// scoreEvents measures the residual reduction two ways: over the corrected
+// regions, and over the whole clip.
 // Averaging over the whole clip would dilute a real improvement to nothing.
-func scoreEvents(times []float64, before, after []quat.Q, events []detect.Event) (float64, float64) {
+func scoreEvents(times []float64, before, after []quat.Q, events []detect.Event) (float64, float64, float64, float64) {
 	beforeScorer, err := correct.PrepareAngularAcceleration(times, before)
 	if err != nil {
-		return 0, 0
+		return 0, 0, 0, 0
 	}
 	afterScorer, err := correct.PrepareAngularAcceleration(times, after)
 	if err != nil {
-		return 0, 0
+		return 0, 0, 0, 0
+	}
+	// The clip-wide pair is the honest headline. The in-region figure cannot
+	// fall where detection never looked, so it reads best exactly when
+	// under-detection has left the footage still shaking.
+	clipBefore, clipAfter := 0.0, 0.0
+	if len(times) > 1 {
+		clipBefore = beforeScorer.Score(times[0], times[len(times)-1])
+		clipAfter = afterScorer.Score(times[0], times[len(times)-1])
 	}
 	weightedBefore, weightedAfter, total := 0.0, 0.0, 0.0
 	for _, event := range events {
@@ -688,15 +700,16 @@ func scoreEvents(times []float64, before, after []quat.Q, events []detect.Event)
 		total += weight
 	}
 	if total == 0 {
-		return 0, 0
+		return 0, 0, clipBefore, clipAfter
 	}
-	return weightedBefore / total, weightedAfter / total
+	return weightedBefore / total, weightedAfter / total, clipBefore, clipAfter
 }
 
 func paramsMap(params detect.Params, opts *options) map[string]any {
 	return map[string]any{
 		"mode":               "auto",
 		"profile":            params.Profile,
+		"style":              params.Style,
 		"sensitivity":        params.Sensitivity,
 		"mad_k":              params.MADK,
 		"rel_k":              params.RelK,

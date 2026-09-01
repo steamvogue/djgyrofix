@@ -75,6 +75,57 @@ rejects all 17 as real rapid motion on this clip. That is a safer failure mode:
 smoothing a detected deviation can be undone, while bridging real motion invents
 an orientation the camera did not report.
 
+## The baseline window, and a burst that hid itself
+
+A viewer reported sharp jitter surviving correction at 1:19-1:21. It was there,
+and the cause was detection rather than correction: of that two-second window,
+0.23 s had ever been flagged.
+
+The residual over 79.0-80.0 s runs 165-235 °/s. The threshold over the same
+span is about 605 °/s, from `baseline + 5·sigma` with a baseline of 94 °/s and a
+sigma near 102. The window is a ±5 s half-width, so it spans 10 s, and a 2 s
+burst supplies a fifth of the samples that sigma is computed from. The burst
+raises the very bar meant to catch it. Seven of 200 bins crossed.
+
+Widening the window is what fixes it, and it is cheaper than loosening the
+multiplier:
+
+| Setting | Events | Affected | 79-81 s covered |
+|---|---|---|---|
+| ±5 s (the old default) | 82 | 5.98% | 12% |
+| ±20 s | 91 | 7.61% | 46% |
+| ±20 s, `--mad-k 4` | 99 | 9.87% | 54% |
+| ±20 s, `--mad-k 3` | 107 | 12.73% | 77% |
+| `--mad-k 2` alone | 115 | 14.74% | 37% |
+| ±2 s | 66 | 4.36% | 8% |
+
+Measured residual in the reported window, before and after correction:
+
+| | RMS | Peak |
+|---|---|---|
+| Original | 238.6 °/s | 2009.1 °/s |
+| Corrected at ±5 s | 171.3 °/s | 869.1 °/s |
+| Corrected at ±20 s, `--mad-k 3` | 14.3 °/s | 204.4 °/s |
+
+Two consequences followed. The window became a named flight style, because its
+right value depends on how the aircraft was flown rather than on anything a
+pilot can measure. And the window is now capped at a quarter of the clip
+duration: a half-width that reaches past half the footage is not rolling any
+more, and on a thirty-second clip a ±12 s window flattened localized roughness
+back into the clip's own level — the exact failure the rolling baseline replaced.
+
+## What the in-region score concealed
+
+The same run reported a 91.6% residual reduction while that window still shook.
+The figure was true and useless. It is measured inside the corrected regions,
+and those regions covered 12% of the burst, so it was reporting the quality of
+the correction over the ground detection had chosen to look at. It cannot fall
+where nothing was flagged, which makes it most flattering exactly when
+under-detection is the problem.
+
+The same run measures 16.1% clip-wide on the same metric. Both are now printed,
+clip-wide first.
+
 ## Scope of the evidence
 
 This is one long, real clip plus generated fixtures designed to isolate clean

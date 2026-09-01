@@ -43,6 +43,9 @@ const (
 type Params struct {
 	// Profile is the preset these values came from.
 	Profile string `json:"profile"`
+	// Style is the flight style the baseline window came from, empty when
+	// --baseline-window was set explicitly.
+	Style string `json:"style,omitempty"`
 	// Sensitivity scales every threshold. Above 1.0 detects more.
 	Sensitivity float64 `json:"sensitivity"`
 	// MADK is the Hampel sigma multiplier.
@@ -93,10 +96,11 @@ type Params struct {
 func Defaults() Params {
 	return Params{
 		Profile:             "balanced",
+		Style:               string(StyleNormal),
 		Sensitivity:         1.0,
 		MADK:                5.0,
 		RelK:                3.0,
-		BaselineWindow:      5 * time.Second,
+		BaselineWindow:      styleWindows[StyleNormal],
 		FloorDPS:            60,
 		MinSeverity:         5.0,
 		IMUFullScale:        2000,
@@ -145,6 +149,51 @@ func ProfileParams(name string) (Params, error) {
 		return Params{}, fmt.Errorf("unknown profile %q (want conservative, balanced or aggressive)", name)
 	}
 	return params, nil
+}
+
+// Style names how the aircraft was being flown, which sets the rolling baseline
+// window and nothing else.
+//
+// The window has to be long enough that a burst of ringing cannot dominate its
+// own neighbourhood. The threshold is baseline + k·sigma over a sliding window,
+// so a two-second burst inside a ten-second window contributes a fifth of the
+// samples the sigma is computed from — it raises the very bar meant to catch
+// it, and hides. Measured on the real clip in docs/FINDINGS.md, a burst at
+// 79-81 s sat at 165-235 °/s against a threshold of 605 °/s, and only 12% of it
+// was flagged. At a 20 s window that rose to 46%, and correction took the
+// window's residual from 238.6 °/s RMS to 14.3 °/s.
+//
+// Smoother flying needs less of this, not more: long cruising passes give a
+// stable local baseline that a short window tracks well. Violent flying needs
+// the long window, because that is where the sustained ringing lives.
+type Style string
+
+// Flight styles, ordered by how violent the flying is.
+const (
+	// StyleCinematic is smooth cruising and slow pans.
+	StyleCinematic Style = "cinematic"
+	// StyleNormal is ordinary mixed flying, and the default.
+	StyleNormal Style = "normal"
+	// StyleFreestyle is flips, rolls and hard direction changes.
+	StyleFreestyle Style = "freestyle"
+)
+
+// styleWindows maps each style to its rolling baseline half-width.
+var styleWindows = map[Style]time.Duration{
+	StyleCinematic: 5 * time.Second,
+	StyleNormal:    12 * time.Second,
+	StyleFreestyle: 20 * time.Second,
+}
+
+// Styles lists every style, smoothest first, for help text and validation.
+var Styles = []Style{StyleCinematic, StyleNormal, StyleFreestyle}
+
+// StyleWindow returns the baseline window for a named style.
+func StyleWindow(name string) (time.Duration, error) {
+	if window, ok := styleWindows[Style(name)]; ok {
+		return window, nil
+	}
+	return 0, fmt.Errorf("unknown style %q (want cinematic, normal or freestyle)", name)
 }
 
 // Validate checks the parameters are usable.

@@ -83,7 +83,9 @@ type Input struct {
 	// ImprovementPercent is the predicted residual reduction inside the
 	// corrected regions. Valid only when Scored is set.
 	ImprovementPercent float64
-	Scored             bool
+	// ClipImprovementPercent is the same reduction over the whole clip.
+	ClipImprovementPercent float64
+	Scored                 bool
 	// ResidualRegions is how many original correction regions were still
 	// detectable after the bounded passes.
 	ResidualRegions int
@@ -93,8 +95,10 @@ type Input struct {
 const (
 	// noisyShareUpstream is the share of a clip that has to sit at or above the
 	// noisy level before the noise floor, rather than the metadata, is the
-	// story. A quarter of a clip is already more than smoothing could rescue.
-	noisyShareUpstream = 0.25
+	// story. A fifth of a clip is already past what smoothing could rescue:
+	// --max-affected refuses at 15%, so a noise floor covering more than that
+	// cannot be corrected even in principle.
+	noisyShareUpstream = 0.20
 	// noisyShareMention is where a rough stretch is worth naming even though
 	// the rest of the clip is patchable.
 	noisyShareMention = 0.05
@@ -208,8 +212,8 @@ func patch(in Input, actionable int) Advice {
 	}
 	if in.Scored {
 		advice.Prediction = fmt.Sprintf(
-			"predicted residual reduction %.1f%%, measured inside the corrected regions only",
-			in.ImprovementPercent)
+			"predicted residual reduction %.1f%% clip-wide, %.1f%% inside the corrected regions",
+			in.ClipImprovementPercent, in.ImprovementPercent)
 	}
 	return advice
 }
@@ -250,6 +254,17 @@ func tuning(in Input, actionable int, verdict Verdict) []Suggestion {
 				in.AffectedFraction*100, in.MaxAffected*100),
 		})
 	}
+	// The trigger is the in-region figure, not the clip-wide one. A low
+	// clip-wide reduction is ambiguous: a clean clip with one short artifact
+	// scores low there no matter how perfectly that artifact was corrected,
+	// simply because there was nothing else to improve. A low in-region figure
+	// is unambiguous — correction aimed at something and missed.
+	//
+	// There is deliberately no automatic steer toward a longer --style. Bursts
+	// that outlast the baseline window hide by raising their own threshold, and
+	// nothing downstream can tell that from footage that was genuinely quiet
+	// there. That is the whole reason such a burst is hard to catch, and
+	// guessing would fire on every clean clip.
 	if in.Scored && actionable > 0 && in.ImprovementPercent < weakCorrection {
 		suggestions = append(suggestions, Suggestion{
 			Flags: "--smoothing-ms 200",

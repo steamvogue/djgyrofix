@@ -60,6 +60,10 @@ type Report struct {
 	BackupPath         string  `json:"backup_path,omitempty"`
 	ScoreBefore        float64 `json:"score_before,omitempty"`
 	ScoreAfter         float64 `json:"score_after,omitempty"`
+	// ClipScoreBefore and ClipScoreAfter measure the same metric over the whole
+	// clip rather than over the corrected regions.
+	ClipScoreBefore float64 `json:"clip_score_before,omitempty"`
+	ClipScoreAfter  float64 `json:"clip_score_after,omitempty"`
 
 	Warnings []string `json:"warnings,omitempty"`
 }
@@ -73,13 +77,27 @@ type AutoRecord struct {
 	Attempts []string `json:"attempts"`
 }
 
-// ImprovementPercent is the reduction in transient residual, on the
-// reference's angular-acceleration metric.
+// ImprovementPercent is the reduction in transient residual inside the
+// corrected regions, on the reference's angular-acceleration metric.
+//
+// Read it with ClipImprovementPercent, never alone. This figure cannot fall
+// where detection never looked, so it reads best precisely when under-detection
+// has left the footage still shaking: one real clip reported 91.6% here while a
+// two-second burst it had covered 12% of remained plainly visible.
 func (r Report) ImprovementPercent() float64 {
 	if r.ScoreBefore <= 0 {
 		return 0
 	}
 	return math.Max(0, (1.0-r.ScoreAfter/r.ScoreBefore)*100.0)
+}
+
+// ClipImprovementPercent is the same reduction measured over the whole clip. It
+// is the honest headline, because it falls when correction misses something.
+func (r Report) ClipImprovementPercent() float64 {
+	if r.ClipScoreBefore <= 0 {
+		return 0
+	}
+	return math.Max(0, (1.0-r.ClipScoreAfter/r.ClipScoreBefore)*100.0)
 }
 
 // Timestamp renders seconds as HH:MM:SS.mmm.
@@ -247,7 +265,8 @@ func writeTextOne(w *errWriter, report Report) {
 			w.printf("backup:  %s\n", report.BackupPath)
 		}
 		if report.ScoreBefore > 0 {
-			w.printf("transient residual reduced %.1f%%\n", report.ImprovementPercent())
+			w.printf("transient residual reduced %.1f%% clip-wide, %.1f%% inside the corrected regions\n",
+				report.ClipImprovementPercent(), report.ImprovementPercent())
 		}
 	} else if report.DryRun && report.Writes > 0 {
 		// Reached from `scan` as well as from a `fix` dry run, so the

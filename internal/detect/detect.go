@@ -345,7 +345,18 @@ func thresholdCurve(bins binned, params Params, durationSeconds float64) ([]floa
 		return baselines, thresholds, false
 	}
 
-	halfWidth := int(math.Round(params.BaselineWindow.Seconds() / bins.width))
+	// A rolling window has to be short enough to actually roll. The window is a
+	// half-width, so it spans twice this either side of each bin; letting it
+	// reach much past half the clip turns the "rolling" baseline back into the
+	// global one this replaced, and localized roughness stops registering as
+	// anything but the clip's own level. Capping the span at half the clip
+	// keeps a long window useful on long footage — where it belongs — without
+	// flattening a thirty-second one.
+	window := params.BaselineWindow.Seconds()
+	if longest := durationSeconds / 4; window > longest {
+		window = longest
+	}
+	halfWidth := int(math.Round(window / bins.width))
 	if halfWidth < 1 {
 		halfWidth = 1
 	}

@@ -18,6 +18,7 @@ import (
 type options struct {
 	// Detection
 	profile        string
+	style          string
 	sensitivity    float64
 	madK           float64
 	baselineWindow time.Duration
@@ -47,6 +48,7 @@ type options struct {
 
 func (o *options) registerDetection(flags *flag.FlagSet) {
 	flags.StringVar(&o.profile, "profile", "balanced", "detection preset: conservative | balanced | aggressive")
+	flags.StringVar(&o.style, "style", "normal", "flying: cinematic | normal | freestyle (sets the baseline window)")
 	flags.Float64Var(&o.sensitivity, "sensitivity", 1.0, "scale all thresholds, 0.1-3.0 (higher detects more)")
 	flags.Float64Var(&o.madK, "mad-k", 0, "Hampel sigma multiplier (default from profile)")
 	flags.DurationVar(&o.baselineWindow, "baseline-window", 0, "rolling baseline half-width (default 5s)")
@@ -102,8 +104,19 @@ func (o *options) applyOverrides(params detect.Params) (detect.Params, error) {
 	if o.madK > 0 {
 		params.MADK = o.madK
 	}
+	// A style names a window; --baseline-window names one directly and wins,
+	// because a user who typed a duration meant that duration.
+	if o.style != "" {
+		window, err := detect.StyleWindow(o.style)
+		if err != nil {
+			return params, err
+		}
+		params.Style = o.style
+		params.BaselineWindow = window
+	}
 	if o.baselineWindow > 0 {
 		params.BaselineWindow = o.baselineWindow
+		params.Style = ""
 	}
 	if o.floorDPS > 0 {
 		params.FloorDPS = o.floorDPS

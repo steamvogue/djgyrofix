@@ -6,6 +6,41 @@ Notable changes to djgyrofix. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-09-01
+
+Both changes here came from a viewer reporting sharp jitter that survived
+correction at 1:19–1:21 of the real clip. The jitter was real, the cause was
+under-detection, and the reported score had said the run went well.
+
+### Added
+
+- **`--style cinematic | normal | freestyle`**, which sets the rolling baseline
+  half-width to ±5 s, ±12 s or ±20 s and nothing else. It is a separate axis
+  from `--profile`: profile is how strict detection is, style is the timescale
+  it works over. `--baseline-window` still takes a duration and overrides it.
+- **Clip-wide residual reduction is reported alongside the in-region figure**,
+  clip-wide first. The in-region figure cannot fall where detection never
+  looked, so it reads best exactly when under-detection is the problem: the
+  real clip reported 91.6% while a burst it had covered 12% of was still
+  plainly visible. The same run measures 16.1% clip-wide.
+
+### Changed
+
+- **The default baseline window is now ±12 s, up from ±5 s.** A two-second
+  burst inside a ten-second window supplies a fifth of the samples its own
+  threshold is computed from, so it raises the bar meant to catch it and hides.
+  On the real clip a burst at 79–81 s sat at 165–235 °/s against a 605 °/s
+  threshold, and 12% of it was flagged; at ±20 s that becomes 46%. Pass
+  `--style cinematic` for the previous behaviour, which reproduces the old
+  results exactly.
+- The rolling baseline window is capped at a quarter of the clip duration. A
+  half-width reaching past half the footage is not rolling any more, and on a
+  thirty-second clip a ±12 s window flattened localized roughness back into the
+  clip's own level — the failure the rolling baseline was introduced to fix.
+- `upstream` is now reached at 20% of a clip above the noise level, down from
+  25%. `--max-affected` refuses at 15%, so a noise floor covering more than
+  that cannot be corrected even in principle.
+
 ## [0.3.2] — 2026-09-01
 
 Two defects in the 0.3.0 diagnosis, both found by running it on real footage.
@@ -237,7 +272,8 @@ byte-for-byte output parity against it in manual-range mode.
 - Writing a full copy of the video for every edit. `--out` keeps that behaviour
   where it is wanted.
 
-[Unreleased]: https://github.com/steamvogue/djgyrofix/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/steamvogue/djgyrofix/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/steamvogue/djgyrofix/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/steamvogue/djgyrofix/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/steamvogue/djgyrofix/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/steamvogue/djgyrofix/compare/v0.2.0...v0.3.0

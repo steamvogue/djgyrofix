@@ -105,8 +105,13 @@ func TestPartlyRoughFootageIsStillCaught(t *testing.T) {
 	if err != nil {
 		t.Fatalf("analyze: %v", err)
 	}
-	if result.report.Noise.NoisyFraction < 0.2 {
-		t.Fatalf("noisy share %.2f, want the rough third to register", result.report.Noise.NoisyFraction)
+	// The fixture is rough for a third of its length. The measured share comes
+	// out lower because the rolling baseline tapers across the boundary, so
+	// this asserts the verdict and a clear margin over the threshold rather
+	// than a number that would sit on the knife edge.
+	if result.report.Noise.NoisyFraction < 0.22 {
+		t.Fatalf("noisy share %.2f, want the rough third to register with margin",
+			result.report.Noise.NoisyFraction)
 	}
 	if got := result.report.Advice.Verdict; got != advise.VerdictUpstream {
 		t.Errorf("verdict = %q, want upstream", got)
