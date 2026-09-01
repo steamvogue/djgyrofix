@@ -69,6 +69,16 @@ type Result struct {
 	// Implausible marks quaternions that failed the physical plausibility
 	// gate; only these are eligible for reconstruction.
 	Implausible []bool `json:"-"`
+	// Residual is the per-sample deviation of angular velocity from its own
+	// low-passed copy, in degrees per second. Detection works on this binned
+	// into 10 ms energy; run-repair needs it per sample, because the artifact
+	// lives in runs far shorter than a bin.
+	Residual []float64 `json:"-"`
+	// Trend is the per-sample low-passed angular speed in degrees per second,
+	// which is what a replaced run has to stay consistent with.
+	Trend []float64 `json:"-"`
+	// PointThreshold is the detection threshold interpolated onto each sample.
+	PointThreshold []float64 `json:"-"`
 }
 
 type vec3 [3]float64
@@ -177,7 +187,41 @@ func Run(points []pipeline.Point, params Params) (*Result, error) {
 		result.AffectedFraction = result.AffectedSeconds / result.DurationSeconds
 	}
 	result.Weights = weightEnvelope(bins, thresholds, times, result.Events, params, interval)
+	result.Residual, result.Trend = pointSeries(residuals, lowpass)
+	result.PointThreshold = pointThresholds(bins, thresholds, times)
 	return result, nil
+}
+
+// pointSeries flattens the per-axis residual and low-passed velocity into the
+// per-sample magnitudes run-repair works from.
+func pointSeries(residuals, lowpass []vec3) ([]float64, []float64) {
+	residual := make([]float64, len(residuals))
+	trend := make([]float64, len(lowpass))
+	for index := range residuals {
+		residual[index] = residuals[index].norm()
+		trend[index] = lowpass[index].norm()
+	}
+	return residual, trend
+}
+
+// pointThresholds maps the per-bin threshold curve onto every sample, so a run
+// is judged against the same bar its enclosing event was.
+func pointThresholds(bins binned, thresholds []float64, times []float64) []float64 {
+	out := make([]float64, len(times))
+	if len(thresholds) == 0 {
+		return out
+	}
+	for index, time := range times {
+		bin := int((time - bins.startSeconds) / bins.width)
+		if bin < 0 {
+			bin = 0
+		}
+		if bin >= len(thresholds) {
+			bin = len(thresholds) - 1
+		}
+		out[index] = thresholds[bin]
+	}
+	return out
 }
 
 // angularVelocities converts orientations into an angular velocity vector in

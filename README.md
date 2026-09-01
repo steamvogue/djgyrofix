@@ -346,6 +346,7 @@ always names the exact build that produced it.
 ### Correction flags
 
 ```
+  --repair string         correct an event by blur | runs         (default "blur")
   --strength float        global multiplier on the weight, 0-1   (default 1.0)
   --smoothing-ms float    override per-event window derivation   (default: auto)
   --bridge-max-samples n  max dropout run to SLERP-bridge        (default 3)
@@ -594,6 +595,54 @@ Autopilot chooses a *profile*, not a whole parameter set — any detection flag
 you pass explicitly still wins over the preset it lands on. It re-runs
 detection only, never the file read or the correction, so the extra cost is
 bounded at two additional detection passes.
+
+## Run-repair
+
+`--repair runs` replaces the samples that do not belong instead of blurring
+everything around them.
+
+The default correction low-passes a whole detected event. That is the wrong
+shape for this artifact. Measured on the real clip, the per-sample residual
+crosses four times its median in 3,145 runs whose **median length is 4.04 ms**
+and whose p90 is 25.28 ms — inside detected events that routinely span hundreds
+of milliseconds. Blurring the event smooths 300 ms of genuine motion to remove
+4 ms of overshoot, which is why corrected footage can go soft while the spike
+survives.
+
+Run-repair finds the supra-threshold runs inside an event and interpolates each
+one along the arc between the last good orientation before it and the first good
+one after — the same SLERP a dropout bridge uses. Every sample outside a run is
+left byte-identical, and an event whose runs were all replaced is not blurred at
+all. On a fixture built from short excursions the blur touches 270 samples where
+run-repair touches 30.
+
+```bash
+djgyrofix fix --apply --repair runs DJI_0042.MP4
+```
+
+**It can fail in a way the blur cannot.** These runs cluster on sharp movements,
+where the true trajectory has the most curvature and an interpolation is most
+likely to invent an orientation the aircraft never held. Two guards bound that:
+
+- A run longer than 30 ms is never replaced. Interpolating the 320 ms outliers
+  seen on real footage would fabricate more attitude than it removed, so those
+  fall back to the blur.
+- A run is only replaced when its endpoints are still consistent with the
+  surrounding motion — when the deviation *departs and returns*. A run whose
+  endpoints have themselves moved somewhere the local trend does not predict is
+  a real movement, and is left alone. On the real clip that test refuses about
+  one run in four hundred, and on a synthetic step it refuses all of them.
+
+The report says what happened:
+
+```
+run-repair: replaced 4901 runs (29112 quaternions); 400 too long to
+interpolate, 12 were real motion
+```
+
+It is opt-in because it is newer and less validated than the blur, and because
+fabricating orientation is the one mistake here that cannot be spotted by
+looking at the output.
 
 ## Safety
 

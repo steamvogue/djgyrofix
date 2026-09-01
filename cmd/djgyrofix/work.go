@@ -127,9 +127,13 @@ func analyzeAuto(source *pipeline.Source, opts *options, result *analysis) error
 
 	times := pipeline.Times(points)
 	values := pipeline.Values(points)
+	repairStats := &correct.RepairStats{}
 	corrected, correctionPasses, postCorrection, discovered, correctionScopes, err := autoCorrect(points, detected, params, correct.EnvelopeOptions{
 		Strength:    opts.strength,
 		SmoothingMS: opts.smoothingMS,
+		RepairRuns:  opts.repair == "runs",
+		Repair:      correct.DefaultRepairOptions(),
+		Stats:       repairStats,
 	}, opts.maxAffected)
 	if err != nil {
 		return err
@@ -145,6 +149,10 @@ func analyzeAuto(source *pipeline.Source, opts *options, result *analysis) error
 			result.report.AffectedFraction = result.report.AffectedSeconds / result.report.DurationSeconds
 		}
 	}
+	if opts.repair == "runs" {
+		result.report.Repair = repairStats
+	}
+	result.params["repair"] = opts.repair
 	result.params["correction_passes"] = correctionPasses
 	result.params["events_discovered_during_correction"] = len(discovered)
 	scopePadding := math.Max(params.GapSeconds, params.EnvelopeBlurSeconds)

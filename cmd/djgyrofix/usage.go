@@ -18,7 +18,7 @@ import (
 // TestEveryFlagAppearsInExactlyOneGroup fails if they do.
 var (
 	detectionFlagNames  = []string{"profile", "style", "sensitivity", "mad-k", "baseline-window", "floor-dps", "min-severity", "imu-full-scale", "auto"}
-	correctionFlagNames = []string{"strength", "smoothing-ms", "bridge-max-samples", "no-bridge", "ranges"}
+	correctionFlagNames = []string{"repair", "strength", "smoothing-ms", "bridge-max-samples", "no-bridge", "ranges"}
 	safetyFlagNames     = []string{"dry-run", "apply", "backup", "out", "force", "max-affected"}
 	outputFlagNames     = []string{"variant", "jobs", "format"}
 	revertFlagNames     = []string{"keep-journal", "force"}

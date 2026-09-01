@@ -14,6 +14,13 @@ type EnvelopeOptions struct {
 	Strength float64
 	// SmoothingMS overrides the per-event window derivation when non-zero.
 	SmoothingMS float64
+	// RepairRuns replaces short out-of-trend runs by interpolation before any
+	// blurring, instead of blurring across them.
+	RepairRuns bool
+	// Repair configures that pass.
+	Repair RepairOptions
+	// Stats receives what run-repair did, when it runs.
+	Stats *RepairStats
 }
 
 // Envelope applies the corrections pass 1 asked for and returns the full point
@@ -60,8 +67,29 @@ func Envelope(times []float64, values []quat.Q, result *detect.Result, options E
 			return nil, err
 		}
 	}
-	for _, event := range result.Events {
+	// Run-repair goes between the bridges and the blur. A run it replaces is
+	// no longer over threshold, so the blur that follows sees a trajectory that
+	// has already been restored and leaves the surrounding motion alone.
+	repaired := make([]bool, len(result.Events))
+	if options.RepairRuns {
+		stats, handled, err := RepairRuns(times, working, output, result, options.Repair)
+		if err != nil {
+			return nil, err
+		}
+		repaired = handled
+		if options.Stats != nil {
+			options.Stats.RunsReplaced += stats.RunsReplaced
+			options.Stats.SamplesReplaced += stats.SamplesReplaced
+			options.Stats.RunsTooLong += stats.RunsTooLong
+			options.Stats.RunsRealMotion += stats.RunsRealMotion
+		}
+	}
+
+	for eventIndex, event := range result.Events {
 		if event.Action != detect.ActionSmooth {
+			continue
+		}
+		if repaired[eventIndex] {
 			continue
 		}
 		window := options.SmoothingMS

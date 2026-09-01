@@ -6,6 +6,29 @@ Notable changes to djgyrofix. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`--repair runs`**, an outlier-replacement correction proposed by a user of
+  the tool. Instead of low-passing a whole detected event, it finds the
+  supra-threshold runs inside it and interpolates each along the arc between its
+  neighbours, leaving every sample outside a run byte-identical.
+
+  The measurement behind it: on the real clip the per-sample residual crosses
+  four times its median in 3,145 runs whose median length is 4.04 ms and whose
+  p90 is 25.28 ms, inside events spanning hundreds of milliseconds. The blur was
+  smoothing 300 ms of genuine motion to remove 4 ms of overshoot. On a fixture
+  built from short excursions the blur touches 270 samples where run-repair
+  touches 30; on the real clip it patches 134,337 quaternions against the blur's
+  165,207 for the same detection.
+
+  Two guards bound the risk, which is the mirror of the benefit — these runs
+  cluster on sharp movements, where an interpolation is most likely to invent an
+  orientation. Runs over 30 ms are never replaced, and a run is only replaced
+  when its endpoints still match the surrounding trend, so a deviation that
+  departs and stays departed is treated as real motion. Opt-in, because
+  fabricating orientation is the one mistake here that cannot be seen in the
+  output.
+
 ## [0.5.1] — 2026-09-01
 
 ### Fixed

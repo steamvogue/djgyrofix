@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/steamvogue/djgyrofix/internal/advise"
+	"github.com/steamvogue/djgyrofix/internal/correct"
 	"github.com/steamvogue/djgyrofix/internal/detect"
 )
 
@@ -53,17 +54,19 @@ type Report struct {
 	Auto *AutoRecord `json:"auto,omitempty"`
 
 	// Fix results. Applied is false for a scan or a dry run.
-	Applied            bool    `json:"applied"`
-	DryRun             bool    `json:"dry_run"`
-	Writes             int     `json:"writes"`
-	BytesWritten       int     `json:"bytes_written"`
-	QuaternionsChanged int     `json:"quaternions_changed"`
-	SamplesChanged     int     `json:"samples_changed"`
-	OutputPath         string  `json:"output_path,omitempty"`
-	JournalPath        string  `json:"journal_path,omitempty"`
-	BackupPath         string  `json:"backup_path,omitempty"`
-	ScoreBefore        float64 `json:"score_before,omitempty"`
-	ScoreAfter         float64 `json:"score_after,omitempty"`
+	Applied            bool   `json:"applied"`
+	DryRun             bool   `json:"dry_run"`
+	Writes             int    `json:"writes"`
+	BytesWritten       int    `json:"bytes_written"`
+	QuaternionsChanged int    `json:"quaternions_changed"`
+	SamplesChanged     int    `json:"samples_changed"`
+	OutputPath         string `json:"output_path,omitempty"`
+	JournalPath        string `json:"journal_path,omitempty"`
+	BackupPath         string `json:"backup_path,omitempty"`
+	// Repair is what run-repair did, when --repair runs was used.
+	Repair      *correct.RepairStats `json:"repair,omitempty"`
+	ScoreBefore float64              `json:"score_before,omitempty"`
+	ScoreAfter  float64              `json:"score_after,omitempty"`
 	// ClipScoreBefore and ClipScoreAfter measure the same metric over the whole
 	// clip rather than over the corrected regions.
 	ClipScoreBefore float64 `json:"clip_score_before,omitempty"`
@@ -258,6 +261,12 @@ func writeTextOne(w *errWriter, report Report) {
 		w.printf("\n%d event%s, %.2f s affected (%.2f%% of clip)\n",
 			len(report.Events), plural(len(report.Events)),
 			report.AffectedSeconds, report.AffectedFraction*100)
+	}
+
+	if report.Repair != nil {
+		w.printf("\nrun-repair: replaced %d runs (%d quaternions); %d too long to interpolate, %d were real motion\n",
+			report.Repair.RunsReplaced, report.Repair.SamplesReplaced,
+			report.Repair.RunsTooLong, report.Repair.RunsRealMotion)
 	}
 
 	if report.Applied {

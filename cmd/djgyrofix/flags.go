@@ -28,6 +28,7 @@ type options struct {
 	auto           bool
 
 	// Correction
+	repair           string
 	strength         float64
 	smoothingMS      float64
 	bridgeMaxSamples optionalInt
@@ -59,6 +60,7 @@ func (o *options) registerDetection(flags *flag.FlagSet) {
 }
 
 func (o *options) registerCorrection(flags *flag.FlagSet) {
+	flags.StringVar(&o.repair, "repair", "blur", "how to correct a detected event: blur | runs")
 	flags.Float64Var(&o.strength, "strength", 1.0, "global multiplier on the correction weight, 0-1")
 	flags.Float64Var(&o.smoothingMS, "smoothing-ms", 0, "override the per-event window derivation (default: auto)")
 	flags.Var(&o.bridgeMaxSamples, "bridge-max-samples", "longest dropout run to SLERP-bridge (default 3)")
@@ -159,6 +161,11 @@ func (o *options) validateCommon() error {
 	case "", "text", "json", "edl", "csv":
 	default:
 		return fmt.Errorf("unknown format %q (want text, json, edl or csv)", o.format)
+	}
+	switch o.repair {
+	case "", "blur", "runs":
+	default:
+		return fmt.Errorf("unknown repair mode %q (want blur or runs)", o.repair)
 	}
 	return nil
 }
