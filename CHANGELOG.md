@@ -6,6 +6,51 @@ Notable changes to djgyrofix. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-09-01
+
+A viewer reported that a patched file changed nothing in Gyroflow. Checking
+Gyroflow's own parser against both files showed it reads exactly the field this
+tool patches, and sees the patch. It also showed why the patch was aimed at the
+wrong thing.
+
+### Fixed
+
+- **Angular velocity is differenced against the last distinct orientation.**
+  DJI stores every fused attitude twice: measured across two real O4 clips,
+  exactly 50.00% of stored quaternions are byte-identical to their predecessor,
+  in runs of exactly two at a fixed parity. The track presents 1978 Hz and
+  carries 989 Hz. Differencing consecutive stored samples made every other
+  velocity exactly zero and doubled the rest — a square wave at Nyquist whose
+  amplitude scales with rotation rate, so it was largest exactly where the
+  detector was looking.
+
+  On the clip with real artifacts it accounted for three quarters of the
+  whole-clip residual (118.4 °/s RMS → 31.6) and inflated the apparent noise
+  floor tenfold (37.9 °/s → 3.4), dragging every threshold up with it. Real
+  transients were hiding inside phantom noise several times their own size. On
+  a clip its owner considers entirely normal, reported events fall from two to
+  one over 228 seconds, and the apparent floor from 10.5 °/s to 2.0.
+
+  The collapse is decided per file from the measured duplicate share, never
+  assumed: a frozen telemetry dropout is locally the same shape, and collapsing
+  one would erase the signature that makes it reconstructable.
+- **The `upstream` noise level is recalibrated to 45 °/s**, from 90. The
+  previous value was derived from an apparent floor of 39 °/s that was roughly
+  92% sampling artifact. Real anchors are now 2.0 and 3.4 °/s.
+
+### Added
+
+- `scan` reports an oversampled stored rate under the baseline line, and
+  `duplicate_share` in the JSON report.
+
+### Note on `--style`
+
+The flight-style presets added in 0.4.0 were treating this symptom. With the
+duplication handled, the threshold on both real clips sits at the absolute
+`--floor-dps` everywhere and the style makes no measurable difference on either.
+The flag still does what it documents and still matters where the σ term drives
+the threshold, but it is no longer the answer to jitter surviving correction.
+
 ## [0.4.0] — 2026-09-01
 
 Both changes here came from a viewer reporting sharp jitter that survived
@@ -272,7 +317,8 @@ byte-for-byte output parity against it in manual-range mode.
 - Writing a full copy of the video for every edit. `--out` keeps that behaviour
   where it is wanted.
 
-[Unreleased]: https://github.com/steamvogue/djgyrofix/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/steamvogue/djgyrofix/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/steamvogue/djgyrofix/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/steamvogue/djgyrofix/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/steamvogue/djgyrofix/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/steamvogue/djgyrofix/compare/v0.3.0...v0.3.1

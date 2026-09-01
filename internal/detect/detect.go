@@ -57,6 +57,9 @@ type Result struct {
 	// under MinSeverity. A cluster of them means a stricter profile than the
 	// footage needs.
 	NearMiss int `json:"near_miss_events"`
+	// DuplicateShare is the fraction of stored quaternions identical to their
+	// predecessor. DJI oversamples, so on real footage this sits at 0.5.
+	DuplicateShare float64 `json:"duplicate_share"`
 
 	// Weights is the per-quaternion correction envelope w(t) from plan §6.2.
 	// It is already masked to actionable smoothing events and blurred, so a
@@ -117,7 +120,9 @@ func Run(points []pipeline.Point, params Params) (*Result, error) {
 	}
 	continuous := quat.Unwrap(normalized)
 
-	velocities, err := angularVelocities(times, continuous, interval)
+	result.DuplicateShare = duplicatePairShare(rawValues)
+	collapse := result.DuplicateShare >= structuralDuplicateShare
+	velocities, err := angularVelocities(times, continuous, interval, collapse)
 	if err != nil {
 		return nil, err
 	}
@@ -175,16 +180,46 @@ func Run(points []pipeline.Point, params Params) (*Result, error) {
 	return result, nil
 }
 
-// angularVelocities converts consecutive orientations into an angular velocity
-// vector in degrees per second, ported from the reference's _rotation_velocity.
-func angularVelocities(times []float64, quaternions []quat.Q, interval float64) ([]vec3, error) {
+// angularVelocities converts orientations into an angular velocity vector in
+// degrees per second, ported from the reference's _rotation_velocity.
+//
+// The difference is taken against the last *distinct* orientation rather than
+// the immediately preceding sample, because DJI stores each fused attitude
+// twice. Both real O4 clips measured here are exactly 50.00% duplicate pairs —
+// 496,759 runs of length two in one, 227,756 in the other, and five runs of any
+// other length between them — so the stream presents 1978 Hz while carrying
+// 989 Hz of information.
+//
+// Differencing consecutive stored samples turns that into a square wave at
+// Nyquist: every other velocity is exactly zero and the rest are double the
+// true rate. Its amplitude scales with how fast the aircraft is rotating, so it
+// is largest exactly where the detector is looking. On the fast clip it
+// accounted for three quarters of the whole-clip residual (118.4 °/s RMS as
+// stored, 31.6 °/s differenced properly) and it inflated the apparent noise
+// floor from 3.2 °/s to 37.9 °/s, dragging every threshold up with it. Real
+// artifacts then hid inside phantom noise several times their own size.
+//
+// The collapse is decided per file rather than applied blindly, because a short
+// run of identical orientations is also what a frozen telemetry dropout looks
+// like, and locally the two are the same shape. Only the whole-stream statistic
+// tells them apart: structural oversampling covers half the file at a fixed
+// parity, a dropout covers two samples in thousands. See duplicatePairShare.
+func angularVelocities(times []float64, quaternions []quat.Q, interval float64, collapse bool) ([]vec3, error) {
 	velocities := make([]vec3, len(quaternions))
+	previous := 0
 	for index := 1; index < len(quaternions); index++ {
-		step := times[index] - times[index-1]
+		if collapse && quaternions[index] == quaternions[previous] {
+			// No new information here. Hold the velocity of the step this
+			// sample belongs to, so the series stays the same length as the
+			// stored one and every downstream index still lines up.
+			velocities[index] = velocities[index-1]
+			continue
+		}
+		step := times[index] - times[previous]
 		if step < interval {
 			step = interval
 		}
-		inverse, err := quat.Inverse(quaternions[index-1])
+		inverse, err := quat.Inverse(quaternions[previous])
 		if err != nil {
 			return nil, err
 		}
@@ -192,6 +227,7 @@ func angularVelocities(times []float64, quaternions []quat.Q, interval float64) 
 		if err != nil {
 			return nil, err
 		}
+		previous = index
 		if delta[0] < 0.0 {
 			delta = delta.Neg()
 		}

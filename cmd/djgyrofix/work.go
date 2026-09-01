@@ -112,6 +112,7 @@ func analyzeAuto(source *pipeline.Source, opts *options, result *analysis) error
 	result.report.AffectedFraction = detected.AffectedFraction
 	result.report.Noise = detected.Noise
 	result.report.NearMissEvents = detected.NearMiss
+	result.report.DuplicateShare = detected.DuplicateShare
 	result.events = detected.Events
 	result.params = paramsMap(params, opts)
 

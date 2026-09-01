@@ -1,8 +1,10 @@
 # Real-footage findings
 
 This document records what changed when djgyrofix was exercised end to end on
-`testdata/DJI_20260705_RAW.MP4`. The clip itself is not committed: it is
-6,570,736,456 bytes. The historical implementation is preserved on the `study`
+two real O4 clips, neither committed: `testdata/DJI_20260705_RAW.MP4`
+(6,570,736,456 bytes, the clip with the reported artifacts) and
+`testdata/DJI_20260830_VILLA2.MP4` (3,848,754,322 bytes, from an O4 Pro, which
+its owner considers entirely normal and in no need of correction). The historical implementation is preserved on the `study`
 branch; `main` contains the resulting detector and correction pipeline.
 
 ## The artifact model
@@ -126,9 +128,96 @@ under-detection is the problem.
 The same run measures 16.1% clip-wide on the same metric. Both are now printed,
 clip-wide first.
 
+## DJI stores every attitude twice
+
+The largest error in this tool was not in the detector. It was in the first
+line of the pipeline.
+
+A viewer reported that a patched file changed nothing in Gyroflow. Gyroflow's
+own parser, `telemetry-parser` at the revision Gyroflow pins, reads the same
+field this tool patches — for wm169, `frame_meta(3) → imu_frame_meta(3) →
+IMU_attitude_after_fusion(2) → attitude`, which is the `3.3.2.3` path here — and
+dumping it against the original and the patched copy confirms it sees the patch.
+The plumbing was never the problem.
+
+What that dump also showed is that every quaternion appears twice:
+
+```
+79.0001  -0.318590030 -0.118440285  0.099368557  0.935199514
+79.0006  -0.318590030 -0.118440285  0.099368557  0.935199514
+79.0011  -0.320291102 -0.118514359  0.099473476  0.934597731
+79.0016  -0.320291102 -0.118514359  0.099473476  0.934597731
+```
+
+Measured over both clips, it is structural rather than a defect of either:
+
+| Clip | Quaternions | Identical to predecessor | Run lengths |
+|---|---|---|---|
+| RAW | 993,523 @ 1978 Hz | 496,759 — 50.00% | 496,759 of length 2, 5 others |
+| VILLA2 | 455,517 @ 1978 Hz | 227,756 — 50.00% | 227,756 of length 2, 5 others |
+
+The duplicates sit at a fixed parity — 496,733 even against 26 odd on RAW. DJI
+presents 1978 Hz while carrying 989 Hz of information.
+
+Differencing consecutive stored samples, which is what this tool did, turns that
+into a square wave at Nyquist. Every other velocity is exactly zero and the rest
+are twice the true rate:
+
+```
+79.0005   410.57 °/s
+79.0010     0.00
+79.0015   411.33
+79.0020     0.00
+```
+
+Its amplitude scales with how fast the aircraft is rotating, so it is largest
+exactly where the detector is looking. Collapsing it changes the measurements
+the whole tool is built on:
+
+| Measurement | As differenced before | Differenced properly |
+|---|---|---|
+| RAW, whole-clip residual RMS | 118.4 °/s | 31.6 °/s |
+| RAW, a quiet stretch at 300-310 s | 91.2 °/s | 19.7 °/s |
+| RAW, apparent noise floor (p50) | 37.9 °/s | 3.4 °/s |
+| RAW, median detection threshold | 222 °/s | 60 °/s (the absolute floor) |
+| VILLA2, whole-clip residual RMS | 22.6 °/s | 13.4 °/s |
+| VILLA2, apparent noise floor (p50) | 10.5 °/s | 2.0 °/s |
+
+Three earlier conclusions in this document and in the README were wrong because
+of it:
+
+- That real footage carries a far higher residual floor than a generated clean
+  track. It does not. RAW reads 3.4 °/s and VILLA2 2.0 °/s once the duplication
+  is accounted for; the 39 °/s that the `upstream` threshold was calibrated
+  against was roughly 92% sampling artifact.
+- That the burst at 79-81 s was mostly transient artifact. About half of it was
+  the square wave. What remains is real and now stands far clearer of the floor:
+  124.9 °/s RMS against a quiet-stretch level near 20.
+- That the rolling baseline window needed widening. It needed widening only
+  because the phantom noise inflated the local sigma. With the duplication
+  collapsed, the threshold on RAW sits at the absolute floor everywhere and the
+  window makes no measurable difference at any style.
+
+The collapse is decided per file from the whole-stream duplicate share, not
+applied blindly, because a short run of identical orientations is also what a
+frozen telemetry dropout looks like. Locally the two are the same shape; only
+the global statistic separates half a file at a fixed parity from two samples
+in thousands.
+
+### What the two clips report afterwards
+
+| Clip | Events | Affected | Noise floor p50 | Verdict |
+|---|---|---|---|---|
+| RAW | 156 | 5.42% | 3.4 °/s | `patch` |
+| VILLA2 | 1 | 0.04% | 2.0 °/s | `patch` |
+
+VILLA2 is the useful control: a clip its owner considers normal now yields a
+single 86 ms event over 228 seconds. Before the duplication was handled it
+yielded two events and an apparent floor of 10.5 °/s.
+
 ## Scope of the evidence
 
-This is one long, real clip plus generated fixtures designed to isolate clean
+This is two real clips plus generated fixtures designed to isolate clean
 vector changes, low-frequency ringing, true short corruption, continuous
 over-rate motion and correction composition. It validates this failure mode and
 the full patch/verify/revert path; it is not yet a broad labelled corpus across

@@ -120,8 +120,11 @@ func TestNearMissCountsOnlyTheEventsJustUnderTheCut(t *testing.T) {
 // airframe problem. That is the worst error the diagnosis can make: it tells a
 // pilot to go re-mount a camera over footage the tool would have fixed.
 func TestKnownRepairableFootageIsNotCalledNoisy(t *testing.T) {
-	// Measured on the real clip, in °/s.
-	const realTypical, realP90 = 39.2, 66.7
+	// Measured on the real clips with the duplicated samples collapsed, in °/s:
+	// the worst p90 of the two, from the clip that does have real artifacts.
+	// The pre-duplication figures were 39.2 and 66.7, and were mostly the
+	// sampling artifact rather than the airframe.
+	const realTypical, realP90 = 3.4, 4.3
 
 	for _, profile := range []string{"conservative", "balanced", "aggressive"} {
 		params, err := detect.ProfileParams(profile)

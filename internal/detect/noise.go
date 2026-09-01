@@ -3,6 +3,8 @@ package detect
 import (
 	"math"
 	"sort"
+
+	"github.com/steamvogue/djgyrofix/internal/quat"
 )
 
 // NoiseProfile summarises the residual noise floor across a whole clip.
@@ -77,17 +79,20 @@ func noiseProfile(baselines []float64, params Params, binSeconds float64) NoiseP
 // noisyFloorDPS is where a residual floor stops being background and starts
 // being the defect, in degrees per second.
 //
-// It is bracketed by two measurements: the p90 of the real repairable clip
-// (66.7 °/s), which must fall below it, and the p10 of a synthetic clip
-// resonating end to end (113.3 °/s), which must fall above it. Ninety leaves
-// roughly a third of margin either way.
+// The anchors below it are two real O4 clips measured with DJI's duplicated
+// samples collapsed: a clip its owner considers entirely normal reads 2.0 °/s
+// typical and 2.8 °/s at p90, and the clip with real transient artifacts reads
+// 3.4 °/s and 4.3 °/s — its problem is bursts, not floor. The anchor above it
+// is a synthetic clip resonating end to end, whose floor never drops below
+// 113 °/s. Forty-five sits about ten times over the highest real reading and
+// about two and a half times under the synthetic one.
 //
-// That is one real data point on each side, and the upper one is generated
-// rather than observed. Expect this number to move as more real footage is
-// seen; it is the single value most likely to be wrong in this package, which
-// is why it is here on its own rather than inlined. See Known limits in the
-// README.
-const noisyFloorDPS = 90.0
+// An earlier value of 90 was derived before the duplication was understood,
+// from an apparent floor of 39 °/s that was roughly 92% sampling artifact. The
+// upper anchor is still generated rather than observed: no measurement of a
+// genuinely badly-mounted airframe exists here yet, so the margin below is
+// deliberately the generous one. Expect this to move. See Known limits.
+const noisyFloorDPS = 45.0
 
 // effectiveFloor is the absolute floor thresholdCurve actually applies, after
 // --sensitivity has scaled it.
@@ -122,3 +127,28 @@ func percentile(sorted []float64, fraction float64) float64 {
 // adjacent profiles' severity cuts, so a cluster inside it is exactly the case
 // where the next profile down would have kept them.
 const nearMissSeverity = 1.5
+
+// structuralDuplicateShare is the fraction of identical consecutive pairs above
+// which a stream is treated as oversampled rather than as carrying occasional
+// repeats.
+//
+// Both real DJI clips measured sit at exactly 0.5000, and the synthetic
+// fixtures — including the one with a deliberate frozen dropout — sit near
+// zero. Nothing observed falls between, so the threshold only has to separate
+// "half the file" from "a handful of samples".
+const structuralDuplicateShare = 0.4
+
+// duplicatePairShare is the fraction of quaternions identical to the one before
+// them.
+func duplicatePairShare(values []quat.Q) float64 {
+	if len(values) < 2 {
+		return 0
+	}
+	identical := 0
+	for index := 1; index < len(values); index++ {
+		if values[index] == values[index-1] {
+			identical++
+		}
+	}
+	return float64(identical) / float64(len(values)-1)
+}

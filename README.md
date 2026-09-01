@@ -9,6 +9,19 @@
 A dependency-free Go CLI that detects and corrects transient attitude
 deviations in DJI MP4/MOV metadata, in place, with exact revert.
 
+## What's new in 0.5.0
+
+- **DJI stores every attitude twice, and djgyrofix was measuring the seam.**
+  Differencing consecutive stored samples produced a square wave at Nyquist
+  that accounted for three quarters of the residual on real footage and
+  inflated the apparent noise floor tenfold. See
+  [DJI stores every attitude twice](#dji-stores-every-attitude-twice).
+- Thresholds fall with it, so real transients stop hiding inside phantom noise.
+  A clip considered entirely normal now reports one 86 ms event over 228
+  seconds instead of two, at a 2.0 °/s floor instead of 10.5.
+- The `upstream` noise level is recalibrated from 90 °/s to 45, the previous
+  value having been derived from a floor that was mostly sampling artifact.
+
 ## What's new in 0.4.0
 
 - `--style cinematic | normal | freestyle` sets the rolling baseline window to
@@ -262,8 +275,8 @@ page. Open the newest successful run, scroll to **Artifacts**, and download
 
 ```bash
 # Linux / macOS
-tar xzf djgyrofix-v0.4.0-linux-amd64.tar.gz
-sudo install djgyrofix-v0.4.0-linux-amd64/djgyrofix /usr/local/bin/
+tar xzf djgyrofix-v0.5.0-linux-amd64.tar.gz
+sudo install djgyrofix-v0.5.0-linux-amd64/djgyrofix /usr/local/bin/
 djgyrofix version
 ```
 
@@ -301,7 +314,7 @@ djgyrofix version
 
 The version is resolved from the build rather than hardcoded, so it cannot
 disagree with the release it came from. A release binary reports its tag
-(`0.4.0`); one built from a working tree reports the commit
+(`0.5.0`); one built from a working tree reports the commit
 (`devel+a1b2c3d4e5f6`, with `.dirty` appended for uncommitted changes). Whatever
 it reports is also what gets written into every patch journal, so a journal
 always names the exact build that produced it.
@@ -442,14 +455,19 @@ from `--profile`, which sets how strict detection is.
 | `freestyle` | ±20 s | Flips, rolls, hard direction changes |
 
 The window has to be long enough that a burst of ringing cannot dominate its own
-neighbourhood. The threshold is `baseline + k·σ` over a sliding window, so a
-two-second burst inside a ten-second window supplies a fifth of the samples that
-σ is computed from — it raises the very bar meant to catch it, and hides.
+neighbourhood. The threshold is `max(floor, baseline + k·σ, k_rel·baseline)` over
+a sliding window, so a two-second burst inside a ten-second window supplies a
+fifth of the samples σ is computed from — it raises the very bar meant to catch
+it, and hides.
 
-That is not hypothetical. On the real clip in [the findings](docs/FINDINGS.md) a
-burst at 79–81 s sat at 165–235 °/s against a threshold of 605 °/s, and only 12%
-of it was ever flagged. At ±20 s that rose to 46%, and correction took the
-window's residual from 238.6 °/s RMS down to 14.3 °/s.
+**This matters far less than it appeared to.** These presets were added while
+the apparent noise floor was inflated about tenfold by
+[DJI's duplicated samples](#dji-stores-every-attitude-twice), which made the σ
+term dominate the threshold. With that handled, the threshold on both real
+clips sits at the absolute `--floor-dps` everywhere, and the style makes no
+measurable difference on either. It still does what it says, and it still
+matters on footage whose noise floor is high enough for the σ term to drive the
+threshold — but it is no longer the answer to jitter that survives correction.
 
 Violent flying needs the long window because that is where sustained ringing
 lives. Smooth flying needs less of it, not more: long cruising passes give a
@@ -459,6 +477,41 @@ stable local baseline that a short, more locally adaptive window tracks better.
 window is capped at a quarter of the clip either way — a half-width reaching
 past half the footage is not rolling any more, and would undo the whole point of
 a local baseline on a short clip.
+
+## DJI stores every attitude twice
+
+Every quaternion in a DJI metadata track appears twice. Measured across two real
+O4 clips, exactly 50.00% of stored quaternions are byte-identical to the one
+before them, in runs of exactly two at a fixed parity. The track presents
+1978 Hz and carries 989 Hz of information.
+
+That matters because angular velocity comes from the difference between
+orientations. Differencing consecutive *stored* samples makes every other
+velocity exactly zero and doubles the rest — a square wave at Nyquist whose
+amplitude scales with how fast the aircraft is rotating, which is largest
+exactly where a transient detector is looking:
+
+```
+79.0005   410.57 °/s
+79.0010     0.00
+79.0015   411.33
+79.0020     0.00
+```
+
+djgyrofix differences against the last *distinct* orientation instead. On the
+clip with real artifacts that takes the whole-clip residual from 118.4 °/s RMS
+to 31.6, and the apparent noise floor from 37.9 °/s to 3.4. Thresholds fall with
+it, and real transients stop hiding inside phantom noise several times their own
+size.
+
+The collapse is decided per file from the measured duplicate share, never
+assumed. A short run of identical orientations is also what a frozen telemetry
+dropout looks like, and locally the two are the same shape — only the global
+statistic separates half a file at a fixed parity from two samples in thousands.
+Collapsing a dropout would erase the signature that makes it reconstructable.
+
+When a file is oversampled, `scan` says so under the baseline line, and
+`--format json` carries it as `duplicate_share`.
 
 ## Reading the diagnosis
 
@@ -498,14 +551,13 @@ level are what make that stretch visible, and the `upstream` verdict is what
 says it out loud. A short event list over rough footage is a symptom, not a
 reassurance.
 
-The noisy level is an absolute 90 °/s and deliberately does not move with
+The noisy level is an absolute 45 °/s and deliberately does not move with
 `--floor-dps`, `--profile` or `--sensitivity`. How much an airframe resonates is
 a property of the aircraft, not of how wide a search you asked for, and the same
-footage changing diagnosis because you changed the search would be a bug. It is
-bracketed by two measurements: the p90 of the real repairable clip in
-[the findings](docs/FINDINGS.md) (66.7 °/s) sits below it, and a clip resonating
-end to end sits above it. `scan --format json` carries the whole thing under
-`noise` and `advice`.
+footage changing diagnosis because you changed the search would be a bug. Below
+it sit two real O4 clips at 2.0 and 3.4 °/s typical; above it sits a clip
+resonating end to end, which never drops under 113 °/s. `scan --format json`
+carries the whole thing under `noise` and `advice`.
 
 ## Autopilot
 
@@ -555,7 +607,7 @@ sidecar journal instead:
 // DJI_0042.MP4.gyrofix.json
 {
   "version": 1,
-  "tool": "djgyrofix 0.4.0",
+  "tool": "djgyrofix 0.5.0",
   "source":   { "name": "DJI_0042.MP4", "size": 21474836480, "mtime": "..." },
   "track":    { "variant": "wm169", "timescale": 1000, "samples": 36012 },
   "metadata_digest": "sha256:...",   // djmd sample bytes only, pre-patch

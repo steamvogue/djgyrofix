@@ -40,6 +40,10 @@ type Report struct {
 	AffectedFraction float64             `json:"affected_fraction"`
 	Noise            detect.NoiseProfile `json:"noise"`
 	NearMissEvents   int                 `json:"near_miss_events"`
+	// DuplicateShare is the fraction of stored quaternions identical to their
+	// predecessor. DJI oversamples its fused attitude, so real footage sits at
+	// 0.5 and the effective information rate is half the stored one.
+	DuplicateShare float64 `json:"duplicate_share"`
 
 	// Advice is the verdict rendered from everything above it. Always present
 	// on an automatic scan or fix; nil on the manual --ranges path, where the
@@ -221,6 +225,10 @@ func writeTextOne(w *errWriter, report Report) {
 	}
 	w.printf("baseline %.1f °/s   threshold %.1f °/s (%s)\n",
 		report.BaselineDPS, report.ThresholdDPS, scope)
+	if report.DuplicateShare >= 0.4 && report.SampleRate > 0 {
+		w.printf("stored rate is %.0f%% duplicate pairs — %.1f Hz of information\n",
+			report.DuplicateShare*100, report.SampleRate*(1-report.DuplicateShare))
+	}
 
 	if len(report.Events) == 0 {
 		w.println("\nno events")
