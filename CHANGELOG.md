@@ -6,6 +6,42 @@ Notable changes to djgyrofix. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **A verdict on every automatic scan and fix.** The report now ends in a
+  diagnosis block: one of `patch`, `upstream`, `review` or `clean`, the
+  measurements behind it, the flags worth trying with the measurement that
+  suggests each, and the command to run. Previously the report printed the
+  numbers and left every interpretation to the reader.
+- **Noise-floor percentiles** (`p10`/`p50`/`p90`) and the share of a clip
+  sitting above the noisy level, exposed on `detect.Result` and in the JSON
+  report under `noise`. The reported baseline is a clip median, which cannot
+  distinguish clean footage from footage that is clean for most of its length
+  and resonating for the rest; the percentile spread can.
+- **The `upstream` verdict**, which is the one this was built for. The rolling
+  Hampel threshold rises with the local noise floor, so a badly mounted stretch
+  raises its own bar and stops producing events — a resonating clip could
+  report a short, reassuring event list. The verdict now says that a quiet
+  event list over a high noise floor is a symptom rather than a clean bill of
+  health.
+- **`--auto`,** an autopilot for profile selection on `scan` and `fix`. It steps
+  one profile stricter when detection exceeds `--max-affected`, one profile
+  looser when nothing was kept but several events scored just under
+  `--min-severity`, and refuses outright when the noise floor makes the clip an
+  airframe problem. It is rule-based rather than an optimizer, because
+  minimising a residual score has a degenerate answer: smooth everything. Every
+  step and its reason are recorded on the report, explicit flags still outrank
+  the profile it lands on, and a refusal yields to `--force`.
+- Predicted residual reduction is now printed on a dry run, labelled as measured
+  inside the corrected regions only. It was already computed and only reported
+  after a patch had been applied.
+
+### Fixed
+
+- The `Try it` session in the README predated the 0.2.0 detector and reported
+  three events, 1.33 s affected and 331 patched quaternions where the shipped
+  binary reports four, 1.49 s and 418.
+
 ## [0.2.0] — 2026-09-01
 
 This release replaces the first automatic-correction model after validating it

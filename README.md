@@ -68,15 +68,19 @@ rather than in the airframe: short dropouts, corrupted samples, and brief
 transient deviations that survive into the metadata. It patches those, leaves
 genuine motion alone, and hands Gyroflow something it can trust.
 
-It is also a diagnostic. Run `djgyrofix scan` and read the answer:
+It is also a diagnostic. Every automatic scan ends in a plain-language verdict,
+and there are four of them:
 
-- **A handful of short events** — that is what this tool is for. Fix them.
-- **`--max-affected` refuses because detection flagged a third of the clip** —
-  that is the tool telling you the problem is upstream. Smoothing a third of a
-  clip would degrade everything and fix nothing. Go and look at the mounting.
-- **No events at all, but the footage still shakes after stabilization** — the
-  metadata is not what is wrong. Try Gyroflow's Complementary integration method
-  or a low-pass filter, both of which pilots report helping on affected units.
+- **`patch`** — a bounded set of artifacts, which is what this tool is for. The
+  block names the predicted improvement and the command to run.
+- **`upstream`** — the noise floor itself is the defect. Soft mounting and a
+  better tune are the fix; nothing in the metadata will help. This one matters
+  most, because it is the case a per-event report reads as good news.
+- **`review`** — detection flagged more than `--max-affected`, so `fix` will
+  refuse. Smoothing that much of a clip degrades everything and fixes nothing.
+- **`clean`** — no correctable artifact. If the footage still shakes after
+  stabilization, try Gyroflow's Complementary integration method or a low-pass
+  filter, both of which pilots report helping on affected units.
 
 Being told *"this is not a metadata problem"* in ten seconds is worth something
 on its own, when the alternative is another evening of re-mounting a camera.
@@ -117,38 +121,50 @@ The session below runs against a generated fixture (see
 ```console
 $ djgyrofix scan sample.MP4
 sample.MP4  wm169  30 s  1500 samples  6000 quaternions @ 200.0 Hz
-baseline 0.5 °/s   threshold 60.0 °/s (rolling)
+baseline 0.6 °/s   threshold 60.0 °/s (rolling)
 
   #  start        end          dur     type     sev  axes   peaks  action
   1  00:00:07.980 00:00:09.220 1.240s  jitter   10.0 X/Z    29     smooth
-  2  00:00:14.970 00:00:15.050 0.080s  impact   10.0 Y      1      smooth
-  3  00:00:25.000 00:00:25.005 0.005s  dropout  9.0  -      1      bridge
+  2  00:00:14.980 00:00:15.050 0.070s  impact   10.0 Y      1      smooth
+  3  00:00:24.920 00:00:25.100 0.180s  jitter   10.0 Y/Z    1      smooth
+     note: contains samples that failed the plausibility gate
+  4  00:00:25.000 00:00:25.005 0.005s  dropout  9.0  -      1      bridge
 
-3 events, 1.33 s affected (4.42% of clip)
+4 events, 1.49 s affected (4.98% of clip)
 
-dry run: would patch 331 quaternions in 85 samples (5296 bytes)
-run `djgyrofix fix --apply sample.MP4` to write
+dry run: would patch 418 quaternions in 105 samples (6680 bytes)
+
+diagnosis: 4 correctable events over 1.49 s (4.98% of the clip) — this is what
+  djgyrofix is for
+  noise floor 0.6 °/s typical, 0.6 °/s p90 — quiet enough that these events
+  stand out as artifacts
+  predicted residual reduction 100.0%, measured inside the corrected regions
+  only
+  try --no-bridge — if you would rather no orientation were reconstructed at
+      all
+  next: djgyrofix fix --apply sample.MP4
 
 $ djgyrofix fix --apply sample.MP4
 ...
-patched 331 quaternions in 85 samples, 5296 bytes
+patched 418 quaternions in 105 samples, 6680 bytes
 journal: sample.MP4.gyrofix.json
-transient residual reduced 99.7%
+transient residual reduced 100.0%
 
 $ djgyrofix revert sample.MP4
-sample.MP4: restored, matches original digest — 5296 bytes (1324 writes)
+sample.MP4: restored, matches original digest — 6680 bytes (1670 writes)
 ```
 
 ## Working with your own footage
 
-Always scan before you patch. The scan opens the file read-only and tells you
-whether this tool is even the right one for the problem.
+Always scan before you patch. The scan opens the file read-only and ends in a
+[diagnosis](#reading-the-diagnosis) that says whether this tool is even the
+right one for the problem.
 
 ```bash
 djgyrofix scan DJI_0042.MP4
 ```
 
-If it reports a handful of short events, patch them. `fix` is a dry run until
+If the verdict is `patch`, patch it. `fix` is a dry run until
 you pass `--apply`, so you can see exactly what would change first:
 
 ```bash
@@ -295,6 +311,7 @@ always names the exact build that produced it.
   --floor-dps float       absolute residual floor, °/s           (default 60)
   --min-severity float    ignore events below this score, 0-10   (default 5.0)
   --imu-full-scale float  plausibility gate, °/s                 (default 2000)
+  --auto                  pick the profile, refuse hopeless footage
 ```
 
 ### Correction flags
@@ -396,6 +413,76 @@ for jitter.
 Correction is rescanned for at most three passes. Newly exposed smoothing events
 may join later passes only while the union of correction ranges remains under
 `--max-affected`; a newly detected dropout is never added automatically.
+
+## Reading the diagnosis
+
+Every automatic scan or fix ends in a diagnosis block. It exists because the
+numbers above it are only actionable to someone who already knows what a clean
+baseline looks like:
+
+```
+diagnosis: 33% of this clip is an airframe problem rather than a metadata one
+  9.93 s of the clip has a noise floor at or above 30.0 °/s, peaking at
+  113.9 °/s, while the rest of it sits quietly at 0.6 °/s
+  the rolling threshold rises with that floor, so detection goes quiet over
+  the roughest stretches; a short event list here is not a clean bill of
+  health
+  note: soft-mount the air unit, check the tune and the props before patching
+        metadata — no software can turn a resonating IMU into a quiet one
+```
+
+The verdict comes first, then the measurements behind it, then any flags worth
+trying with the measurement that suggests them, then the command to run.
+
+**Why the noise floor is reported as percentiles.** The rolling Hampel
+threshold is what makes whole-file detection viable, and it has a consequence
+the single reported baseline hides: the threshold rises with the local noise
+floor, so a resonating stretch raises its own bar and stops producing events. A
+clip that is rough for its first third reports a *median* baseline identical to
+a clean one. The p10/p50/p90 spread and the share of the clip above the noisy
+level are what make that stretch visible, and the `upstream` verdict is what
+says it out loud. A short event list over rough footage is a symptom, not a
+reassurance.
+
+The noisy level is half the effective `--floor-dps`, so it scales with the
+detection floor and `--sensitivity` rather than being an absolute constant.
+`scan --format json` carries the whole thing under `noise` and `advice`.
+
+## Autopilot
+
+`--auto` lets the scan choose the profile, and refuse footage no profile can
+help:
+
+```bash
+djgyrofix scan --auto DJI_0042.MP4          # what it would choose, and why
+djgyrofix fix --auto --apply DJI_0042.MP4   # choose and patch
+```
+
+It is rule-based rather than an optimizer, deliberately. Searching for the
+parameters that minimise a residual score has an obvious degenerate answer —
+smooth everything, and every residual metric improves. Instead it steps one
+profile at a time, in a direction the measurement already justifies:
+
+| Measurement | Move |
+|---|---|
+| Noise floor high across a quarter of the clip or more | **Refuse.** No profile patches an airframe. |
+| More than `--max-affected` flagged | Step one profile stricter; refuse if that is not enough. |
+| Nothing kept, but three or more events just under `--min-severity` | Step one profile looser. |
+| Otherwise | Keep the profile it has. |
+
+Every step is printed and recorded in the report, and a refusal yields to
+`--force`, because the events found on rough footage are still real:
+
+```
+autopilot: balanced profile — refused
+  the noise floor is at or above 30.0 °/s across 33% of the clip; no profile
+    can patch an airframe problem
+```
+
+Autopilot chooses a *profile*, not a whole parameter set — any detection flag
+you pass explicitly still wins over the preset it lands on. It re-runs
+detection only, never the file read or the correction, so the extra cost is
+bounded at two additional detection passes.
 
 ## Safety
 
@@ -608,6 +695,15 @@ They are different problems and it is entirely reasonable to need both.
   clip in [the findings](docs/FINDINGS.md) exercises the complete patch, rescan,
   verify and revert path. Start with `--profile conservative` and a dry run on
   material you care about.
+- **The diagnosis inherits that calibration.** What counts as a noisy clip is
+  measured relative to `--floor-dps` rather than against a corpus of known-good
+  and known-bad footage, and the shares that separate one verdict from the next
+  are judgement calls held in one place
+  ([`internal/advise`](internal/advise/advise.go)). The measurements it quotes
+  are exact; where the line between `patch` and `upstream` belongs is the part
+  that will move as more real footage is seen. It never patches on its own — a
+  verdict changes what you are told, and, under `--auto`, whether the tool
+  declines. It cannot widen what gets written.
 
 ## Licence
 

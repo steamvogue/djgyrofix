@@ -50,6 +50,14 @@ type Result struct {
 	AffectedSeconds  float64 `json:"affected_seconds"`
 	AffectedFraction float64 `json:"affected_fraction"`
 
+	// Noise describes the residual floor across the clip, which the rolling
+	// threshold otherwise hides.
+	Noise NoiseProfile `json:"noise"`
+	// NearMiss counts events that were dropped only because they scored just
+	// under MinSeverity. A cluster of them means a stricter profile than the
+	// footage needs.
+	NearMiss int `json:"near_miss_events"`
+
 	// Weights is the per-quaternion correction envelope w(t) from plan §6.2.
 	// It is already masked to actionable smoothing events and blurred, so a
 	// caller can slerp toward the filtered track by w without any edge
@@ -136,6 +144,7 @@ func Run(points []pipeline.Point, params Params) (*Result, error) {
 	result.Rolling = rolling
 	result.BaselineDPS = quat.Median(baselines)
 	result.ThresholdDPS = quat.Median(thresholds)
+	result.Noise = noiseProfile(baselines, params, bins.width)
 
 	events := dropoutEvents(times, result.Implausible, params)
 	events = append(events, binEvents(bins, baselines, thresholds, times, params, result.Implausible)...)
@@ -145,6 +154,9 @@ func Run(points []pipeline.Point, params Params) (*Result, error) {
 	kept := events[:0]
 	for _, event := range events {
 		if event.Class != ClassDropout && event.Severity < params.MinSeverity {
+			if event.Severity >= params.MinSeverity-nearMissSeverity {
+				result.NearMiss++
+			}
 			continue
 		}
 		kept = append(kept, event)

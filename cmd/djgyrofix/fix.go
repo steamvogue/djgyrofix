@@ -41,6 +41,7 @@ Every applied patch writes a sidecar journal next to the video, so
 		[][2]string{
 			{"djgyrofix fix DJI_0042.MP4", "dry run — report, write nothing"},
 			{"djgyrofix fix --apply DJI_0042.MP4", "patch in place, journal alongside"},
+			{"djgyrofix fix --auto --apply DJI_0042.MP4", "let it pick the profile, or refuse the clip"},
 			{"djgyrofix fix --apply --backup copy DJI_0042.MP4", "also keep a full .orig copy"},
 			{"djgyrofix fix --apply --out fixed.MP4 DJI_0042.MP4", "leave the original untouched"},
 			{"djgyrofix fix --apply --ranges 12.5-14.0 clip.MP4", "skip detection, smooth one window"},
@@ -120,6 +121,22 @@ func fixOne(path string, opts *options, intervals []interval) (report.Report, er
 		return report.Report{}, err
 	}
 	result.report.DryRun = !opts.apply
+
+	// Autopilot refusing is not the same as detection over-flagging: it means
+	// no profile in the set can help this clip, so there is nothing to raise a
+	// limit for. It still yields to --force, because the events it found are
+	// real even when they are not the cause of the shake.
+	if result.report.Auto != nil && result.report.Auto.Refused {
+		reason := "autopilot refused"
+		if steps := result.report.Auto.Steps; len(steps) > 0 {
+			reason = steps[len(steps)-1]
+		}
+		if !opts.force {
+			return report.Report{}, fmt.Errorf("%s: %s. Pass --force to patch anyway, "+
+				"or drop --auto and choose a profile yourself", path, reason)
+		}
+		result.report.Warnings = append(result.report.Warnings, reason+" (accepted via --force)")
+	}
 
 	if intervals == nil && result.report.AffectedFraction > opts.maxAffected {
 		message := fmt.Sprintf(

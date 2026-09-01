@@ -31,6 +31,7 @@ step on footage you care about.`,
 		},
 		[][2]string{
 			{"djgyrofix scan DJI_0042.MP4", "report events in one clip"},
+			{"djgyrofix scan --auto DJI_0042.MP4", "let it pick the profile and say why"},
 			{"djgyrofix scan --profile conservative DJI_*.MP4", "fewer, higher-confidence events"},
 			{"djgyrofix scan --format json DJI_0042.MP4", "machine-readable report"},
 			{"djgyrofix scan --format edl DJI_0042.MP4 > events.edl", "review the ranges in an NLE"},

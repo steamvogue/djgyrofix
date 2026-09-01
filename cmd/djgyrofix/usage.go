@@ -17,7 +17,7 @@ import (
 // The lists are static, so they can drift from what is actually registered.
 // TestEveryFlagAppearsInExactlyOneGroup fails if they do.
 var (
-	detectionFlagNames  = []string{"profile", "sensitivity", "mad-k", "baseline-window", "floor-dps", "min-severity", "imu-full-scale"}
+	detectionFlagNames  = []string{"profile", "sensitivity", "mad-k", "baseline-window", "floor-dps", "min-severity", "imu-full-scale", "auto"}
 	correctionFlagNames = []string{"strength", "smoothing-ms", "bridge-max-samples", "no-bridge", "ranges"}
 	safetyFlagNames     = []string{"dry-run", "apply", "backup", "out", "force", "max-affected"}
 	outputFlagNames     = []string{"variant", "jobs", "format"}

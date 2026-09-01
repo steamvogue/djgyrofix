@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/steamvogue/djgyrofix/internal/advise"
 	"github.com/steamvogue/djgyrofix/internal/detect"
 )
 
@@ -31,12 +32,21 @@ type Report struct {
 	Timescale       uint32  `json:"timescale"`
 	VideoFPS        float64 `json:"video_fps,omitempty"`
 
-	BaselineDPS      float64        `json:"baseline_dps"`
-	ThresholdDPS     float64        `json:"threshold_dps"`
-	RollingBaseline  bool           `json:"rolling_baseline"`
-	Events           []detect.Event `json:"events"`
-	AffectedSeconds  float64        `json:"affected_seconds"`
-	AffectedFraction float64        `json:"affected_fraction"`
+	BaselineDPS      float64             `json:"baseline_dps"`
+	ThresholdDPS     float64             `json:"threshold_dps"`
+	RollingBaseline  bool                `json:"rolling_baseline"`
+	Events           []detect.Event      `json:"events"`
+	AffectedSeconds  float64             `json:"affected_seconds"`
+	AffectedFraction float64             `json:"affected_fraction"`
+	Noise            detect.NoiseProfile `json:"noise"`
+	NearMissEvents   int                 `json:"near_miss_events"`
+
+	// Advice is the verdict rendered from everything above it. Always present
+	// on an automatic scan or fix; nil on the manual --ranges path, where the
+	// user has already decided what to correct.
+	Advice *advise.Advice `json:"advice,omitempty"`
+	// Auto records what autopilot chose and why, when --auto was passed.
+	Auto *AutoRecord `json:"auto,omitempty"`
 
 	// Fix results. Applied is false for a scan or a dry run.
 	Applied            bool    `json:"applied"`
@@ -52,6 +62,15 @@ type Report struct {
 	ScoreAfter         float64 `json:"score_after,omitempty"`
 
 	Warnings []string `json:"warnings,omitempty"`
+}
+
+// AutoRecord is the audit trail of an autopilot run: every profile it tried,
+// in order, and the measurement that moved it on.
+type AutoRecord struct {
+	Profile  string   `json:"profile"`
+	Refused  bool     `json:"refused"`
+	Steps    []string `json:"steps"`
+	Attempts []string `json:"attempts"`
 }
 
 // ImprovementPercent is the reduction in transient residual, on the
@@ -236,12 +255,130 @@ func writeTextOne(w *errWriter, report Report) {
 		// no --apply flag of its own.
 		w.printf("\ndry run: would patch %d quaternions in %d samples (%d bytes)\n",
 			report.QuaternionsChanged, report.SamplesChanged, report.BytesWritten)
-		w.printf("run `djgyrofix fix --apply %s` to write\n", report.File)
+		if report.Advice == nil {
+			// The manual --ranges path has no diagnosis to carry the next
+			// command, so it keeps the instruction of its own.
+			w.printf("run `djgyrofix fix --apply %s` to write\n", report.File)
+		}
 	}
+
+	writeAdvice(w, report)
 
 	for _, warning := range report.Warnings {
 		w.printf("warning: %s\n", warning)
 	}
+}
+
+// writeAdvice renders the diagnosis block: the verdict, the measurements behind
+// it, the flags worth trying next, and the command to run.
+//
+// This is the part of the report a pilot can act on without knowing what a
+// residual is, so it goes last, where the eye lands.
+func writeAdvice(w *errWriter, report Report) {
+	if report.Advice == nil {
+		return
+	}
+	advice := report.Advice
+
+	if report.Auto != nil {
+		headline := "autopilot: " + report.Auto.Profile + " profile"
+		if report.Auto.Refused {
+			headline += " — refused"
+		}
+		w.println()
+		writeWrapped(w, headline, "  ")
+		for _, step := range report.Auto.Steps {
+			writeWrapped(w, "  "+step, "    ")
+		}
+	}
+
+	w.println()
+	writeWrapped(w, "diagnosis: "+advice.Headline, "  ")
+	for _, reason := range advice.Reasons {
+		writeWrapped(w, "  "+reason, "  ")
+	}
+	// A patch that has already run has printed its measured reduction above,
+	// and it needs no invitation to run the command it just ran.
+	if advice.Prediction != "" && !report.Applied {
+		writeWrapped(w, "  "+advice.Prediction, "  ")
+	}
+	for _, suggestion := range advice.Suggestions {
+		if suggestion.Flags == advise.NoFlag {
+			writeWrapped(w, "  note: "+suggestion.Why, "        ")
+			continue
+		}
+		writeWrapped(w, "  try "+suggestion.Flags+" — "+suggestion.Why, "      ")
+	}
+	if advice.NextCommand != "" && !report.Applied {
+		w.printf("  next: %s\n", advice.NextCommand)
+	}
+}
+
+// writeWrapped emits one logical line, folded at adviceWidth with the given
+// continuation indent. The whole line is wrapped, prefix included, because
+// wrapping only the tail leaves the first line as long as the prefix made it.
+//
+// A line's own leading indent is held back from the wrapper, which works in
+// words and would otherwise swallow it.
+func writeWrapped(w *errWriter, line, indent string) {
+	body := strings.TrimLeft(line, " ")
+	lead := line[:len(line)-len(body)]
+	w.printf("%s%s\n", lead, wrapIndent(body, adviceWidth-len(lead), indent))
+}
+
+// adviceWidth is where the prose wraps. Eighty columns is the width every
+// terminal has, and the alternative — querying the real one — would make the
+// output depend on the window it happened to be run in, which is no way to
+// paste a report into a bug report.
+const adviceWidth = 78
+
+// wrapIndent breaks text at adviceWidth, continuing lines with the given
+// indent. Words longer than the width are left intact rather than split.
+func wrapIndent(text string, width int, indent string) string {
+	words := joinUnits(strings.Fields(text))
+	if len(words) == 0 {
+		return ""
+	}
+	var lines []string
+	current := words[0]
+	for _, word := range words[1:] {
+		limit := width
+		if len(lines) > 0 {
+			limit -= len([]rune(indent))
+		}
+		if len([]rune(current))+1+len([]rune(word)) > limit {
+			lines = append(lines, current)
+			current = word
+			continue
+		}
+		current += " " + word
+	}
+	return strings.Join(append(lines, current), "\n"+indent)
+}
+
+// joinUnits reattaches a bare unit to the number in front of it, so a wrap
+// cannot leave "113.9" at the end of one line and "°/s" at the start of the
+// next. Splitting a quantity from its unit is the one line break that makes a
+// measurement harder to read than no wrapping at all.
+func joinUnits(words []string) []string {
+	units := map[string]bool{"°/s": true, "ms": true, "s": true, "Hz": true, "%": true}
+	joined := make([]string, 0, len(words))
+	for _, word := range words {
+		if len(joined) > 0 && units[strings.TrimRight(word, ",.;:")] && endsWithDigit(joined[len(joined)-1]) {
+			joined[len(joined)-1] += " " + word
+			continue
+		}
+		joined = append(joined, word)
+	}
+	return joined
+}
+
+func endsWithDigit(word string) bool {
+	if word == "" {
+		return false
+	}
+	last := word[len(word)-1]
+	return last >= '0' && last <= '9'
 }
 
 // writeEDL emits a CMX 3600 edit decision list, one event per edit, so the

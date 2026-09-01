@@ -24,6 +24,7 @@ type options struct {
 	floorDPS       float64
 	minSeverity    optionalFloat
 	imuFullScale   float64
+	auto           bool
 
 	// Correction
 	strength         float64
@@ -52,6 +53,7 @@ func (o *options) registerDetection(flags *flag.FlagSet) {
 	flags.Float64Var(&o.floorDPS, "floor-dps", 0, "absolute residual floor in °/s (default from profile)")
 	flags.Var(&o.minSeverity, "min-severity", "ignore events scoring below this, 0-10 (default from profile)")
 	flags.Float64Var(&o.imuFullScale, "imu-full-scale", 0, "plausibility gate in °/s (default 2000)")
+	flags.BoolVar(&o.auto, "auto", false, "let the scan pick the profile, and refuse footage no profile can fix")
 }
 
 func (o *options) registerCorrection(flags *flag.FlagSet) {
@@ -86,6 +88,16 @@ func (o *options) detectParams() (detect.Params, error) {
 	if err != nil {
 		return params, err
 	}
+	return o.applyOverrides(params)
+}
+
+// applyOverrides lays the explicit flags over a preset.
+//
+// Autopilot needs this separately from detectParams: it chooses a profile of
+// its own, and a flag the user typed still has to win over the preset that
+// profile brings with it. A --floor-dps on the command line means that floor
+// whichever profile autopilot lands on.
+func (o *options) applyOverrides(params detect.Params) (detect.Params, error) {
 	params.Sensitivity = o.sensitivity
 	if o.madK > 0 {
 		params.MADK = o.madK

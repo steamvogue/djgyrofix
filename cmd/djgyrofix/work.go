@@ -6,6 +6,7 @@ import (
 	"math"
 	"sort"
 
+	"github.com/steamvogue/djgyrofix/internal/advise"
 	"github.com/steamvogue/djgyrofix/internal/correct"
 	"github.com/steamvogue/djgyrofix/internal/detect"
 	"github.com/steamvogue/djgyrofix/internal/djiproto"
@@ -93,6 +94,15 @@ func analyzeAuto(source *pipeline.Source, opts *options, result *analysis) error
 	if err != nil {
 		return err
 	}
+	if opts.auto {
+		// Autopilot re-detects, never re-reads. Detection is the cheap half of
+		// the pass; the correction and the file read are not, so the profile is
+		// settled from detection alone and only the winner is corrected.
+		detected, params, err = autopilot(points, params, opts, result)
+		if err != nil {
+			return err
+		}
+	}
 	result.report.SampleRate = detected.SampleRate
 	result.report.BaselineDPS = detected.BaselineDPS
 	result.report.ThresholdDPS = detected.ThresholdDPS
@@ -100,6 +110,8 @@ func analyzeAuto(source *pipeline.Source, opts *options, result *analysis) error
 	result.report.Events = detected.Events
 	result.report.AffectedSeconds = detected.AffectedSeconds
 	result.report.AffectedFraction = detected.AffectedFraction
+	result.report.Noise = detected.Noise
+	result.report.NearMissEvents = detected.NearMiss
 	result.events = detected.Events
 	result.params = paramsMap(params, opts)
 
@@ -158,7 +170,101 @@ func analyzeAuto(source *pipeline.Source, opts *options, result *analysis) error
 	before, after := scoreEvents(times, values, corrected, result.report.Events)
 	result.report.ScoreBefore = before
 	result.report.ScoreAfter = after
+
+	result.report.Advice = adviseReport(&result.report, params, opts, remaining)
 	return nil
+}
+
+// adviseReport turns a finished analysis into the diagnosis block. It runs last
+// because two of its inputs — the predicted improvement and the count of
+// regions still detectable — only exist once correction has been planned.
+func adviseReport(rep *report.Report, params detect.Params, opts *options, residualRegions int) *advise.Advice {
+	advice := advise.Evaluate(advise.Input{
+		File:               rep.File,
+		DurationSeconds:    rep.DurationSeconds,
+		Events:             rep.Events,
+		AffectedSeconds:    rep.AffectedSeconds,
+		AffectedFraction:   rep.AffectedFraction,
+		Noise:              rep.Noise,
+		NearMiss:           rep.NearMissEvents,
+		RollingBaseline:    rep.RollingBaseline,
+		ShortClipSeconds:   params.ShortClipSeconds,
+		Profile:            params.Profile,
+		Sensitivity:        params.Sensitivity,
+		MinSeverity:        params.MinSeverity,
+		MaxAffected:        opts.maxAffected,
+		ImprovementPercent: rep.ImprovementPercent(),
+		Scored:             rep.ScoreBefore > 0,
+		ResidualRegions:    residualRegions,
+	})
+	return &advice
+}
+
+// autopilot settles on a profile before any correction is planned.
+//
+// It steps at most once in each direction and never revisits a profile, so the
+// loop is bounded at three detection passes over the same in-memory points. The
+// full trail — every profile tried and the measurement that moved it on — is
+// recorded on the report, because a run that silently chose different
+// parameters than the flags asked for would be worse than no autopilot at all.
+func autopilot(points []pipeline.Point, params detect.Params, opts *options, result *analysis) (*detect.Result, detect.Params, error) {
+	record := &report.AutoRecord{Profile: params.Profile}
+	tried := map[string]bool{params.Profile: true}
+	detected, err := detect.Run(points, params)
+	if err != nil {
+		return nil, params, err
+	}
+
+	for attempt := 0; attempt < maxAutopilotSteps; attempt++ {
+		record.Attempts = append(record.Attempts, params.Profile)
+		decision := advise.Step(autopilotInput(detected, params, opts), tried)
+		record.Steps = append(record.Steps, decision.Reason)
+		if decision.Refuse {
+			record.Refused = true
+			break
+		}
+		if decision.Profile == "" || tried[decision.Profile] {
+			break
+		}
+		next, err := detect.ProfileParams(decision.Profile)
+		if err != nil {
+			return nil, params, err
+		}
+		// Explicit flags outrank the preset, exactly as they do on a hand-run
+		// pass: autopilot chooses a profile, not a whole parameter set.
+		next, err = opts.applyOverrides(next)
+		if err != nil {
+			return nil, params, err
+		}
+		rerun, err := detect.Run(points, next)
+		if err != nil {
+			return nil, params, err
+		}
+		tried[decision.Profile] = true
+		params, detected = next, rerun
+		record.Profile = params.Profile
+	}
+
+	result.report.Auto = record
+	return detected, params, nil
+}
+
+// maxAutopilotSteps bounds the profile search. Three profiles exist and a step
+// never revisits one, so this can never be the binding limit; it is here so a
+// future profile list cannot turn the loop into a search.
+const maxAutopilotSteps = 3
+
+func autopilotInput(detected *detect.Result, params detect.Params, opts *options) advise.Input {
+	return advise.Input{
+		Events:           detected.Events,
+		AffectedSeconds:  detected.AffectedSeconds,
+		AffectedFraction: detected.AffectedFraction,
+		Noise:            detected.Noise,
+		NearMiss:         detected.NearMiss,
+		Profile:          params.Profile,
+		MinSeverity:      params.MinSeverity,
+		MaxAffected:      opts.maxAffected,
+	}
 }
 
 const maxAutoCorrectionPasses = 3
