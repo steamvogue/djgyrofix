@@ -112,8 +112,8 @@ const (
 // Evaluate reads the detection result and returns the verdict.
 func Evaluate(in Input) Advice {
 	actionable := actionableCount(in.Events)
-	advice := Advice{}
 
+	var advice Advice
 	switch {
 	case in.Noise.NoisyFraction >= noisyShareUpstream:
 		advice = upstream(in)

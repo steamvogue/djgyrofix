@@ -43,7 +43,19 @@ fmt:
 	@unformatted=$$(gofmt -l cmd internal tools); \
 	if [ -n "$$unformatted" ]; then echo "not gofmt'd:"; echo "$$unformatted"; exit 1; fi
 
+# CI runs golangci-lint, so `make lint` has to as well — a local gate that
+# checks less than CI does is a gate that hands you a red build. It is skipped
+# with a warning rather than a failure when the binary is absent, so a fresh
+# clone can still run the target.
+GOLANGCI ?= $(shell command -v golangci-lint 2>/dev/null || echo $(HOME)/go/bin/golangci-lint)
+
 lint: fmt vet
+	@if [ -x "$(GOLANGCI)" ]; then \
+		"$(GOLANGCI)" run ./...; \
+	else \
+		echo "golangci-lint not found; CI will still run it."; \
+		echo "install: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest"; \
+	fi
 
 # The parsers walk attacker-controllable length fields, so both get fuzzed.
 FUZZTIME ?= 60s

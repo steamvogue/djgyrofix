@@ -6,6 +6,15 @@ Notable changes to djgyrofix. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A redundant initialization in `advise.Evaluate` that `golangci-lint`
+  (`wastedassign`) rejects. No behaviour change; the v0.3.0 binaries are
+  unaffected.
+- `make lint` now runs `golangci-lint` when it is installed, rather than only
+  `gofmt` and `go vet`. A local gate that checks less than CI does is a gate
+  that hands you a red build — which is exactly what happened on v0.3.0.
+
 ## [0.3.0] — 2026-09-01
 
 The report now interprets its own numbers. A scan ends in a verdict a pilot can
