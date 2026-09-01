@@ -38,64 +38,75 @@ jobs:
       - name: golden parity
         run: ./testdata/golden/parity.sh "$RUNNER_TEMP/reference"
 
-  build:
-    name: build ${{ matrix.goos }}/${{ matrix.goarch }}
+  # All six targets are cross-compiled on one runner. A build matrix would need
+  # an artifact upload and download to reassemble the assets, and that round
+  # trip is more moving parts than six sequential `go build` calls are worth —
+  # the whole job finishes in under two minutes.
+  release:
+    name: build and publish
     needs: verify
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: true
-      matrix:
-        include:
-          - { goos: linux, goarch: amd64 }
-          - { goos: linux, goarch: arm64 }
-          - { goos: darwin, goarch: amd64 }
-          - { goos: darwin, goarch: arm64 }
-          - { goos: windows, goarch: amd64 }
-          - { goos: windows, goarch: arm64 }
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
       - uses: actions/setup-go@v7
         with:
           go-version: '1.25'
           check-latest: true
-          # No go.sum to key a module cache on: this tool has no dependencies.
           cache: false
 
-      - name: build
-        id: build
+      - name: build every target
         env:
-          CGO_ENABLED: '0'
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          version="${{ github.event.inputs.tag || github.ref_name }}"
-          name="djgyrofix-${version}-${GOOS}-${GOARCH}"
-          binary="djgyrofix"
-          if [ "$GOOS" = "windows" ]; then binary="djgyrofix.exe"; fi
-          mkdir -p "build/$name"
-          # -trimpath keeps absolute build paths out of the binary, which is
-          # what makes the output reproducible for anyone rebuilding the tag.
-          go build -trimpath -ldflags="-s -w" -o "build/$name/$binary" ./cmd/djgyrofix
-          cp README.md LICENSE "build/$name/"
-          cd build
-          if [ "$GOOS" = "windows" ]; then
-            zip -r "../$name.zip" "$name"
-            echo "asset=$name.zip" >> "$GITHUB_OUTPUT"
-          else
-            tar czf "../$name.tar.gz" "$name"
-            echo "asset=$name.tar.gz" >> "$GITHUB_OUTPUT"
-          fi
+          set -euo pipefail
+          mkdir -p dist
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            goos="${target%/*}"
+            goarch="${target#*/}"
+            name="djgyrofix-${TAG}-${goos}-${goarch}"
+            binary="djgyrofix"
+            [ "$goos" = "windows" ] && binary="djgyrofix.exe"
 
-      - name: smoke test the linux/amd64 build
-        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+            mkdir -p "build/$name"
+            # -trimpath keeps absolute build paths out of the binary, so anyone
+            # rebuilding this tag gets the same bytes.
+            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
+              go build -trimpath -ldflags="-s -w" -o "build/$name/$binary" ./cmd/djgyrofix
+
+            # set -e catches a failing compile, but not a compile that somehow
+            # produces nothing. Publishing an archive containing no binary is
+            # the one failure a user would only discover after downloading.
+            if [ ! -s "build/$name/$binary" ]; then
+              echo "::error::$name produced no binary" >&2
+              exit 1
+            fi
+            cp README.md LICENSE CHANGELOG.md "build/$name/"
+
+            if [ "$goos" = "windows" ]; then
+              (cd build && zip -qr "../dist/$name.zip" "$name")
+            else
+              tar czf "dist/$name.tar.gz" -C build "$name"
+            fi
+            echo "built $name"
+          done
+          ls -lh dist
+
+      - name: smoke test the linux build
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          version="${{ github.event.inputs.tag || github.ref_name }}"
-          bin="build/djgyrofix-${version}-linux-amd64/djgyrofix"
+          set -euo pipefail
+          bin="build/djgyrofix-${TAG}-linux-amd64/djgyrofix"
           "$bin" version
-          # Generate a fixture with a known dropout, then confirm the release
-          # binary finds it, patches it, and reverts byte for byte.
+          "$bin" help
+          # Generate a clip with known artifacts, then confirm the binary that
+          # is about to be published finds them, patches them, and reverts byte
+          # for byte. A release that cannot round-trip is not shippable.
           go run ./tools/mkfixture -o "$RUNNER_TEMP/smoke.MP4" -kind mixed -seconds 20
           sha256sum "$RUNNER_TEMP/smoke.MP4" > "$RUNNER_TEMP/before.sha"
           "$bin" scan "$RUNNER_TEMP/smoke.MP4"
@@ -103,40 +114,83 @@ jobs:
           "$bin" verify "$RUNNER_TEMP/smoke.MP4"
           "$bin" revert "$RUNNER_TEMP/smoke.MP4"
           sha256sum -c "$RUNNER_TEMP/before.sha"
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: ${{ steps.build.outputs.asset }}
-          path: ${{ steps.build.outputs.asset }}
-          if-no-files-found: error
-
-  publish:
-    name: publish release
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v8
-        with:
-          path: artifacts
-          merge-multiple: true
+          echo "round trip is byte-exact"
 
       - name: checksums
         run: |
-          cd artifacts
-          sha256sum ./* > SHA256SUMS
+          set -euo pipefail
+          cd dist
+          sha256sum djgyrofix-* > SHA256SUMS
           cat SHA256SUMS
+
+      - name: release notes
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          cat > notes.md <<NOTES
+          Pre-built binaries for Linux, macOS and Windows on amd64 and arm64.
+          No dependencies, no installer — one file.
+
+          ## Install
+
+          **macOS / Linux**
+
+          \`\`\`bash
+          tar xzf djgyrofix-${TAG}-<platform>.tar.gz
+          sudo install djgyrofix-${TAG}-<platform>/djgyrofix /usr/local/bin/
+          djgyrofix version
+          \`\`\`
+
+          On macOS the binary is not notarized, so Gatekeeper blocks the first
+          run. Either right-click → Open, or:
+
+          \`\`\`bash
+          xattr -d com.apple.quarantine /usr/local/bin/djgyrofix
+          \`\`\`
+
+          **Windows** — unzip and run \`djgyrofix.exe\` from a terminal.
+
+          **With Go** — \`go install github.com/steamvogue/djgyrofix/cmd/djgyrofix@${TAG}\`
+
+          ## Verify your download
+
+          \`\`\`bash
+          sha256sum -c SHA256SUMS --ignore-missing
+          \`\`\`
+
+          ## Quick start
+
+          \`\`\`bash
+          djgyrofix scan DJI_0042.MP4          # what is wrong, writes nothing
+          djgyrofix fix DJI_0042.MP4           # what would change, still writes nothing
+          djgyrofix fix --apply DJI_0042.MP4   # patch in place
+          djgyrofix revert DJI_0042.MP4        # undo, byte for byte
+          \`\`\`
+
+          Read the [README](https://github.com/steamvogue/djgyrofix#readme) first
+          if your stabilized footage shakes worse than the raw — it explains what
+          this tool can and cannot fix, and \`scan\` will often tell you the
+          problem is your camera mounting rather than the metadata.
+
+          ## What changed
+
+          See the [changelog](https://github.com/steamvogue/djgyrofix/blob/${TAG}/CHANGELOG.md).
+          NOTES
+          echo "notes prepared"
 
       - name: publish
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
+          set -euo pipefail
           gh release create "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --title "djgyrofix $TAG" \
-            --generate-notes \
+            --notes-file notes.md \
+            --latest \
             --verify-tag \
-            artifacts/*
+            dist/*
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq '.assets[] | "\(.name)  \(.size) bytes"'
