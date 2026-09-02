@@ -77,6 +77,15 @@ type Result struct {
 	// Trend is the per-sample low-passed angular speed in degrees per second,
 	// which is what a replaced run has to stay consistent with.
 	Trend []float64 `json:"-"`
+	// ResidualAcross is the part of the residual perpendicular to the local
+	// rotation axis — the axis wobbling rather than the rate along it varying.
+	//
+	// Measured across one aggressive manoeuvre on the real clip, this is what
+	// tells the two apart. Through a 366 °/s exit rotation the residual is 29%
+	// across-axis: the aircraft turned faster than the local trend about the
+	// same axis, which is flying. Through the wobble 400 ms later it is 92%
+	// across-axis. The plain magnitude sees one number for both.
+	ResidualAcross []float64 `json:"-"`
 	// PointThreshold is the detection threshold interpolated onto each sample.
 	PointThreshold []float64 `json:"-"`
 }
@@ -187,21 +196,44 @@ func Run(points []pipeline.Point, params Params) (*Result, error) {
 		result.AffectedFraction = result.AffectedSeconds / result.DurationSeconds
 	}
 	result.Weights = weightEnvelope(bins, thresholds, times, result.Events, params, interval)
-	result.Residual, result.Trend = pointSeries(residuals, lowpass)
+	result.Residual, result.Trend, result.ResidualAcross = pointSeries(residuals, lowpass)
 	result.PointThreshold = pointThresholds(bins, thresholds, times)
 	return result, nil
 }
 
 // pointSeries flattens the per-axis residual and low-passed velocity into the
-// per-sample magnitudes run-repair works from.
-func pointSeries(residuals, lowpass []vec3) ([]float64, []float64) {
+// per-sample magnitudes run-repair works from, and splits the residual across
+// the local rotation axis.
+//
+// The split is the whole point. A residual pointing along the axis the aircraft
+// is already turning about means it turned faster or slower than the local
+// trend, which is what flying looks like. A residual perpendicular to that axis
+// means the axis moved, which is what the artifact looks like. Taking the plain
+// magnitude of the residual throws that distinction away, and it is the
+// distinction between correcting a wobble and cutting into a real manoeuvre.
+func pointSeries(residuals, lowpass []vec3) ([]float64, []float64, []float64) {
 	residual := make([]float64, len(residuals))
 	trend := make([]float64, len(lowpass))
+	across := make([]float64, len(residuals))
 	for index := range residuals {
 		residual[index] = residuals[index].norm()
-		trend[index] = lowpass[index].norm()
+		speed := lowpass[index].norm()
+		trend[index] = speed
+		if speed < 1e-9 {
+			// With no local rotation there is no axis to be across, so every
+			// deviation counts.
+			across[index] = residual[index]
+			continue
+		}
+		unit := vec3{lowpass[index][0] / speed, lowpass[index][1] / speed, lowpass[index][2] / speed}
+		projection := dot3(residuals[index], unit)
+		var perpendicular vec3
+		for axis := 0; axis < 3; axis++ {
+			perpendicular[axis] = residuals[index][axis] - projection*unit[axis]
+		}
+		across[index] = perpendicular.norm()
 	}
-	return residual, trend
+	return residual, trend, across
 }
 
 // pointThresholds maps the per-bin threshold curve onto every sample, so a run

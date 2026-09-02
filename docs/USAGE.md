@@ -51,6 +51,13 @@ exists because the artifact is short: on real footage the median run is about
 4 ms inside events spanning hundreds of milliseconds, so the blur was smoothing
 genuine motion to remove a brief overshoot.
 
+A run is selected by the part of the residual **perpendicular to the rotation
+axis**, not by its plain magnitude. Turning faster or slower than the local
+trend about the axis you are already turning about is flying; the axis itself
+moving is the artifact. On the real clip a 366 °/s exit rotation reads 29%
+across-axis where the wobble 400 ms later reads 92%, so this is what stops a
+repair cutting into an aggressive manoeuvre.
+
 It is opt-in, and it can fail in a way the blur cannot: these runs cluster on
 sharp movements, where an interpolation is most likely to invent an orientation
 the aircraft never held. Two guards bound that. A run longer than 30 ms is never

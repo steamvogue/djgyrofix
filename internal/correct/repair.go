@@ -46,6 +46,17 @@ type RepairOptions struct {
 	// TrendFloorDegrees is an absolute allowance added to that tolerance, so a
 	// nearly-stationary run is not rejected for a fraction of a degree.
 	TrendFloorDegrees float64
+	// AlongAxis selects runs by the plain residual magnitude instead of by the
+	// part of it perpendicular to the local rotation axis. It exists so the two
+	// can be compared; the perpendicular measure is the better one.
+	//
+	// A residual pointing along the axis already being turned about means the
+	// aircraft turned faster or slower than the local trend, which is flying.
+	// Perpendicular means the axis itself moved, which is the artifact. Through
+	// one 366 °/s exit rotation on the real clip the residual is 29% across
+	// axis; through the wobble 400 ms later it is 92%. Selecting runs by the
+	// plain magnitude cuts into the first to reach the second.
+	AlongAxis bool
 }
 
 // DefaultRepairOptions are the measured starting points.
@@ -102,11 +113,11 @@ func RepairRuns(
 		first := max(0, event.FirstPoint)
 		last := min(len(times)-1, event.LastPoint)
 		for index := first; index <= last; index++ {
-			if !overThreshold(result, index, options.ExcessK) {
+			if !overThreshold(result, index, options.ExcessK, options.AlongAxis) {
 				continue
 			}
 			runEnd := index
-			for runEnd+1 <= last && overThreshold(result, runEnd+1, options.ExcessK) {
+			for runEnd+1 <= last && overThreshold(result, runEnd+1, options.ExcessK, options.AlongAxis) {
 				runEnd++
 			}
 			runs++
@@ -130,8 +141,12 @@ func RepairRuns(
 	return stats, handled, nil
 }
 
-func overThreshold(result *detect.Result, index int, k float64) bool {
-	return result.Residual[index] > result.PointThreshold[index]*k
+func overThreshold(result *detect.Result, index int, k float64, alongAxis bool) bool {
+	measure := result.Residual
+	if !alongAxis && len(result.ResidualAcross) == len(result.Residual) {
+		measure = result.ResidualAcross
+	}
+	return measure[index] > result.PointThreshold[index]*k
 }
 
 // repairRun decides on one run and, if it passes, interpolates it.

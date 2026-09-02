@@ -6,6 +6,29 @@ Notable changes to djgyrofix. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-09-02
+
+### Changed
+
+- **Run-repair selects runs by the residual across the rotation axis**, not by
+  its plain magnitude. Suggested by a user watching an aggressive manoeuvre
+  where the correction cut into a real exit rotation.
+
+  Turning faster or slower than the local trend about the axis you are already
+  turning about is flying; the axis itself moving is the artifact. The plain
+  magnitude gives one number for both. Measured across one manoeuvre on the real
+  clip, a 366 °/s exit rotation reads 29% across-axis where the wobble 400 ms
+  later reads 92% — the same second, a threefold separation on a quantity the
+  detector was not computing.
+
+  The effect on the real clip: 6,198 runs replaced against 4,901, while touching
+  91,241 quaternions against 134,337. More of the artifact found, a third fewer
+  samples modified, and runs too long to interpolate fall from 400 to 117.
+  Inside the reported wobble it replaces 104 samples where the old measure
+  replaced 133, leaving the along-axis rate variation alone.
+
+  `--repair blur` is unaffected, and golden parity still passes 72 of 72.
+
 ## [0.6.0] — 2026-09-02
 
 ### Added
@@ -370,7 +393,8 @@ byte-for-byte output parity against it in manual-range mode.
 - Writing a full copy of the video for every edit. `--out` keeps that behaviour
   where it is wanted.
 
-[Unreleased]: https://github.com/steamvogue/djgyrofix/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/steamvogue/djgyrofix/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/steamvogue/djgyrofix/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/steamvogue/djgyrofix/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/steamvogue/djgyrofix/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/steamvogue/djgyrofix/compare/v0.4.0...v0.5.0
