@@ -17,7 +17,7 @@ import (
 //
 //  1. Paired opposing rate excursions that return to the prior trajectory.
 //  2. Raw quaternion norm far from unity, before normalization.
-//  3. A timestamp discontinuity or a duplicate decode time.
+//  3. A non-monotonic timestamp or a duplicate decode time.
 //
 // The paired excursion may exceed full scale or form a large under-range
 // reversal. A lone over-rate step is never bridgeable evidence by itself.
@@ -249,6 +249,7 @@ func binEvents(bins binned, baselines, thresholds []float64, times []float64, pa
 }
 
 func classify(bins binned, baselines, thresholds, times []float64, rawFirst, rawLast, paddingBins int, params Params, implausible []bool) (Event, bool) {
+	const singleBinPeakRatio = 1.7
 	activeCount := 0
 	peakIndex := rawFirst
 	for index := rawFirst; index <= rawLast; index++ {
@@ -262,7 +263,7 @@ func classify(bins binned, baselines, thresholds, times []float64, rawFirst, raw
 	peakRatio := bins.metrics[peakIndex] / math.Max(thresholds[peakIndex], 1e-9)
 	// A lone marginal bin is noise. Keep a single bin only when it is well
 	// clear of the threshold.
-	if activeCount < 2 && peakRatio < 1.7 {
+	if activeCount < 2 && peakRatio < singleBinPeakRatio {
 		return Event{}, false
 	}
 
@@ -286,6 +287,8 @@ func classify(bins binned, baselines, thresholds, times []float64, rawFirst, raw
 	motionSum := 0.0
 	residualSum := 0.0
 	acrossSum := 0.0
+	acrossActiveCount := 0
+	acrossPeakRatio := 0.0
 	for index := rawFirst; index <= rawLast; index++ {
 		for axis := 0; axis < 3; axis++ {
 			energies[axis] += bins.axisEnergy[index][axis]
@@ -293,13 +296,24 @@ func classify(bins binned, baselines, thresholds, times []float64, rawFirst, raw
 		motionSum += bins.motion[index] * bins.motion[index]
 		residualSum += bins.metrics[index] * bins.metrics[index]
 		if index < len(bins.acrossEnergy) {
-			acrossSum += bins.acrossEnergy[index] * bins.acrossEnergy[index]
+			across := bins.acrossEnergy[index]
+			acrossSum += across * across
+			if across >= thresholds[index] {
+				acrossActiveCount++
+			}
+			acrossPeakRatio = math.Max(acrossPeakRatio, across/math.Max(thresholds[index], 1e-9))
 		}
 	}
 	binCount := float64(rawLast - rawFirst + 1)
 	motionRMS := math.Sqrt(motionSum / binCount)
 	residualRMS := math.Sqrt(residualSum / binCount)
 	acrossRMS := math.Sqrt(acrossSum / binCount)
+	// Apply the same admission rule to the across-axis component that selected
+	// the total-residual event: two bins over threshold, or one unmistakable
+	// bin. The along-axis ratio test below must not hide an across-axis artifact
+	// that clears the detector in its own right merely because a stronger control
+	// input happened alongside it and made the across/total ratio small.
+	hasAcrossSignal := acrossActiveCount >= 2 || acrossPeakRatio >= singleBinPeakRatio
 
 	event := Event{
 		StartSeconds:  startSeconds,
@@ -330,7 +344,7 @@ func classify(bins binned, baselines, thresholds, times []float64, rawFirst, raw
 	// When the aircraft is turning and the residual is predominantly along the
 	// local rotation axis, it represents acceleration or deceleration of the
 	// turn (control input) rather than the rotation axis wobbling (airframe vibration).
-	if motionRMS > params.MotionDPS*0.5 && residualRMS > 0 && len(bins.acrossEnergy) > 0 {
+	if !hasAcrossSignal && motionRMS > params.MotionDPS*0.5 && residualRMS > 0 && len(bins.acrossEnergy) > 0 {
 		acrossRatio := acrossRMS / residualRMS
 		if acrossRatio < 0.35 {
 			event.Class = ClassMotion

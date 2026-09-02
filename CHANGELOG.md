@@ -6,6 +6,26 @@ Notable changes to djgyrofix. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Release publishing now waits for the complete CI matrix.** The tag workflow
+  calls the same reusable workflow as normal CI, covering tests and race tests
+  on Linux, macOS and Windows, lint, all six cross-builds, parser fuzzing and
+  golden parity before any archive is published.
+
+### Fixed
+
+- **A simultaneous control input could hide an independently significant
+  across-axis artifact.** The 0.9.1 event-level guard treated every event below
+  a fixed across/total residual ratio as intentional motion. A genuine wobble
+  could therefore be discarded when a stronger along-axis acceleration occurred
+  at the same time. The across component now gets the detector's normal
+  admission test first; when it clears that bar on its own, the event remains
+  actionable.
+- Added regression coverage proving that a positive telemetry packet gap does
+  not create a bridge event, while duplicate and regressing timestamps still
+  fail the plausibility gate.
+
 ## [0.9.1] — 2026-09-02
 
 ### Fixed

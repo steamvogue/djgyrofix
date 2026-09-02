@@ -13,30 +13,15 @@ permissions:
   contents: read
 
 jobs:
-  # A release must not ship a binary that never passed its own tests, and the
-  # parity gate is the one that proves this port still matches the reference.
+  # Run the same complete matrix as pull requests and main: three-OS tests and
+  # race tests, lint, all six cross-builds, parser fuzzing and golden parity.
+  # Keeping this as a reusable workflow means the tag runs every gate itself and
+  # cannot publish before the complete matrix for that exact ref has passed.
   verify:
-    name: verify before releasing
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
-      - uses: actions/setup-go@v7
-        with:
-          go-version: '1.25'
-          check-latest: true
-          # No go.sum to key a module cache on: this tool has no dependencies.
-          cache: false
-      - run: go vet ./...
-      - run: go test ./...
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.11'
-      - name: clone the reference implementation
-        run: git clone --depth 1 https://github.com/kim2160/DJIGyroFix.git "$RUNNER_TEMP/reference"
-      - name: golden parity
-        run: ./testdata/golden/parity.sh "$RUNNER_TEMP/reference"
+    name: full CI before releasing
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ github.event.inputs.tag || github.ref }}
 
   # All six targets are cross-compiled on one runner. A build matrix would need
   # an artifact upload and download to reassemble the assets, and that round

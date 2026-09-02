@@ -284,6 +284,36 @@ this document. Everything else here — whole-file detection, the plausibility
 gate, dropout bridging, the weight envelope, the bounded rescans, the diagnosis
 — is this port's, and none of it is covered by that parity.
 
+## Mixed-axis event admission validation
+
+The 0.9.1 event-level across/total ratio guard correctly stopped a pure
+along-axis control input from being smoothed, but the ratio alone had a mixed
+case: a genuine across-axis artifact could fall below 35% of the total when a
+stronger control input occurred at the same time. A generated regression fixture
+now combines a 150 °/s across-axis oscillation with a 900 °/s along-axis rate
+change. The across component clears the ordinary 60 °/s detection threshold on
+its own, and remains actionable; the pure along-axis and whip-pan controls still
+produce no corrective action.
+
+The narrower rule was compared with the published 0.9.1 binary on both real
+clips. Initial detection is unchanged byte for byte at the report-event level:
+
+| Clip | 0.9.1 | Candidate | Affected |
+|---|---|---|---|
+| RAW | 93 events: 69 jitter, 12 impact, 12 motion | identical | 19.8228375 s (3.9864%) |
+| VILLA2 | 1 impact | identical | 0.0863583 s (0.0379%) |
+
+On the RAW dry-run, the bounded correction rescans replace 49 additional short
+runs (90 quaternions) without widening the initial authorized scope or changing
+the 39,542 quaternions and 1,385 metadata samples ultimately written. The
+clip-wide predicted reduction moves only from 4.9962% to 4.9993%. VILLA2's dry
+run is identical throughout. The RAW diagnostic warning rises from 42 to 43
+original regions still detectable after the three bounded passes, so the tiny
+metric improvement is not evidence of full convergence. This validates
+detection and correction scope; a stabilized visual comparison still needs to
+be watched before tagging because no numerical gyro metric substitutes for the
+rendered result.
+
 ## Scope of the evidence
 
 This is two real clips plus generated fixtures designed to isolate clean

@@ -103,3 +103,31 @@ func TestAlongAxisManeuverProducesNoActionableEvents(t *testing.T) {
 		}
 	}
 }
+
+// TestAcrossAxisArtifactSurvivesAStrongerControlInput covers the mixed case the
+// event-level ratio must not hide. A genuine wobble does not stop being an
+// artifact merely because the aircraft accelerates harder about another axis at
+// the same instant. The across-axis component clears the ordinary detection bar
+// on its own, so the event must remain eligible for correction.
+func TestAcrossAxisArtifactSurvivesAStrongerControlInput(t *testing.T) {
+	const rate, count = 200.0, 4000
+	mixedTrack := spin(rate, count, func(i int) [3]float64 {
+		if i < 1900 || i >= 2100 {
+			return [3]float64{0, 0, 300}
+		}
+		phase := math.Sin(float64(i) * 0.7)
+		return [3]float64{150 * phase, 0, 300 + 900*phase}
+	})
+	result, err := detect.Run(points(mixedTrack, rate), detect.Defaults())
+	if err != nil {
+		t.Fatal(err)
+	}
+	const burstSeconds = 10.0
+	for _, event := range result.Events {
+		if event.StartSeconds <= burstSeconds && event.EndSeconds >= burstSeconds &&
+			event.Action != detect.ActionNone {
+			return
+		}
+	}
+	t.Fatalf("a 150 degree/second across-axis artifact was hidden by the stronger along-axis control input: %+v", result.Events)
+}

@@ -4,6 +4,12 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to verify; defaults to the triggering ref
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -24,6 +30,8 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
       - uses: actions/setup-go@v7
         with:
           go-version: '1.25'
@@ -51,6 +59,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
       - uses: actions/setup-go@v7
         with:
           go-version: '1.25'
@@ -71,6 +81,8 @@ jobs:
         goarch: [amd64, arm64]
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
       - uses: actions/setup-go@v7
         with:
           go-version: '1.25'
@@ -89,6 +101,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
       - uses: actions/setup-go@v7
         with:
           go-version: '1.25'
@@ -106,6 +120,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
       - uses: actions/setup-go@v7
         with:
           go-version: '1.25'
