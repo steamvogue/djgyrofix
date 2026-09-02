@@ -6,6 +6,19 @@ Notable changes to djgyrofix. The format follows
 
 ## [Unreleased]
 
+## [0.7.1] — 2026-09-02
+
+Documentation only; the binary is identical to 0.7.0.
+
+### Changed
+
+- `docs/USAGE.md` gains the questions people actually arrive with: an
+  escalation ladder for footage that still shakes after a repair, the
+  compare-by-eye workflow with `--out`, how to read the two improvement figures
+  as a pair, and a table of which flag arrived in which release — because an
+  older binary answers an unknown flag by printing its usage, which reads as a
+  syntax error and is not one.
+
 ## [0.7.0] — 2026-09-02
 
 ### Changed
@@ -393,7 +406,8 @@ byte-for-byte output parity against it in manual-range mode.
 - Writing a full copy of the video for every edit. `--out` keeps that behaviour
   where it is wanted.
 
-[Unreleased]: https://github.com/steamvogue/djgyrofix/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/steamvogue/djgyrofix/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/steamvogue/djgyrofix/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/steamvogue/djgyrofix/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/steamvogue/djgyrofix/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/steamvogue/djgyrofix/compare/v0.5.0...v0.5.1
