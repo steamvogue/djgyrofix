@@ -6,6 +6,8 @@ Notable changes to djgyrofix. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-09-02
+
 ### Added
 
 - **`--repair runs`**, an outlier-replacement correction proposed by a user of
@@ -28,6 +30,16 @@ Notable changes to djgyrofix. The format follows
   departs and stays departed is treated as real motion. Opt-in, because
   fabricating orientation is the one mistake here that cannot be seen in the
   output.
+
+### Changed
+
+- The README is rewritten for someone who wants their footage fixed rather than
+  someone auditing the detector: 880 lines down to 242, download link second on
+  the page, internals moved to the docs that already covered them.
+- `docs/USAGE.md` is new — every flag with its real default, the recipes, undo,
+  exit codes, and which knobs actually affect real footage.
+- `--baseline-window` no longer claims a 5s default in its help text; it comes
+  from `--style`.
 
 ## [0.5.1] — 2026-09-01
 
@@ -358,7 +370,8 @@ byte-for-byte output parity against it in manual-range mode.
 - Writing a full copy of the video for every edit. `--out` keeps that behaviour
   where it is wanted.
 
-[Unreleased]: https://github.com/steamvogue/djgyrofix/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/steamvogue/djgyrofix/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/steamvogue/djgyrofix/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/steamvogue/djgyrofix/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/steamvogue/djgyrofix/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/steamvogue/djgyrofix/compare/v0.3.2...v0.4.0
