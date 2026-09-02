@@ -158,9 +158,10 @@ func Run(points []pipeline.Point, params Params) (*Result, error) {
 		}
 	}
 
+	result.Residual, result.Trend, result.ResidualAcross = pointSeries(residuals, lowpass)
 	result.Implausible = plausibilityGate(times, rawValues, velocities, interval, params)
 
-	bins := binResiduals(times, residuals, lowpass, params.BinSeconds)
+	bins := binResiduals(times, residuals, lowpass, result.ResidualAcross, params.BinSeconds)
 	if len(bins.metrics) == 0 {
 		return result, nil
 	}
@@ -196,7 +197,6 @@ func Run(points []pipeline.Point, params Params) (*Result, error) {
 		result.AffectedFraction = result.AffectedSeconds / result.DurationSeconds
 	}
 	result.Weights = weightEnvelope(bins, thresholds, times, result.Events, params, interval)
-	result.Residual, result.Trend, result.ResidualAcross = pointSeries(residuals, lowpass)
 	result.PointThreshold = pointThresholds(bins, thresholds, times)
 	return result, nil
 }
@@ -356,6 +356,7 @@ type binned struct {
 	times        []float64
 	metrics      []float64
 	axisEnergy   []vec3
+	acrossEnergy []float64
 	// motion is the RMS low-passed speed per bin, used to tell intentional
 	// fast motion from an artifact.
 	motion []float64
@@ -364,7 +365,7 @@ type binned struct {
 	lastPoint  []int
 }
 
-func binResiduals(times []float64, residuals, lowpass []vec3, binSeconds float64) binned {
+func binResiduals(times []float64, residuals, lowpass []vec3, across []float64, binSeconds float64) binned {
 	start := times[0]
 	span := times[len(times)-1] - start
 	count := int(math.Ceil(span / binSeconds))
@@ -377,11 +378,13 @@ func binResiduals(times []float64, residuals, lowpass []vec3, binSeconds float64
 		times:        make([]float64, count),
 		metrics:      make([]float64, count),
 		axisEnergy:   make([]vec3, count),
+		acrossEnergy: make([]float64, count),
 		motion:       make([]float64, count),
 		firstPoint:   make([]int, count),
 		lastPoint:    make([]int, count),
 	}
 	sums := make([]float64, count)
+	acrossSums := make([]float64, count)
 	motionSums := make([]float64, count)
 	counts := make([]int, count)
 	for index := range bins.firstPoint {
@@ -398,6 +401,9 @@ func binResiduals(times []float64, residuals, lowpass []vec3, binSeconds float64
 		}
 		sums[binIndex] += dot3(residuals[index], residuals[index])
 		motionSums[binIndex] += dot3(lowpass[index], lowpass[index])
+		if index < len(across) {
+			acrossSums[binIndex] += across[index] * across[index]
+		}
 		counts[binIndex]++
 		for axis := 0; axis < 3; axis++ {
 			bins.axisEnergy[binIndex][axis] += residuals[index][axis] * residuals[index][axis]
@@ -411,6 +417,7 @@ func binResiduals(times []float64, residuals, lowpass []vec3, binSeconds float64
 		bins.times[index] = start + (float64(index)+0.5)*binSeconds
 		if counts[index] > 0 {
 			bins.metrics[index] = math.Sqrt(sums[index] / float64(counts[index]))
+			bins.acrossEnergy[index] = math.Sqrt(acrossSums[index] / float64(counts[index]))
 			bins.motion[index] = math.Sqrt(motionSums[index] / float64(counts[index]))
 		}
 	}

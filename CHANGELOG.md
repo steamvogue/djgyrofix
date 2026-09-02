@@ -6,6 +6,28 @@ Notable changes to djgyrofix. The format follows
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-09-02
+
+### Fixed
+
+- **Along-axis control rate changes were falsely classified as transient spikes.**
+  Pass 1 event detection previously evaluated only the total residual magnitude,
+  computing the across-axis decomposition after detection had already finished.
+  Rapid along-axis maneuvers (such as abrupt yaw or pitch control inputs) could
+  exceed threshold and get classified as jitter or impact events. `classify()`
+  now evaluates the across-axis residual ratio, correctly identifying along-axis
+  rate changes as intentional `motion` (`ActionNone`).
+- **`localPeakCount` missed leading and trailing boundary peaks.** Candidate
+  selection was restricted to interior bins ($1 \le index \le len-2$), omitting
+  the leading edge (index 0) and trailing edge (index $len-1$). Abrupt impacts
+  and vibration bursts with initial peaks were undercounted, which could lead to
+  jitter events being misclassified as impacts. Boundary bins are now evaluated.
+- **Telemetry packet drops marked subsequent valid samples as corrupt.** In
+  `plausibilityGate`, any step $> 3 \times interval$ marked sample $i$ as
+  implausible, causing `bridge()` to overwrite valid incoming orientations. It
+  now flags only non-monotonic timestamp regressions ($t_{i+1} \le t_i$),
+  leaving valid samples across transmission drops intact.
+
 ## [0.9.0] — 2026-09-02
 
 ### Fixed
@@ -468,7 +490,8 @@ byte-for-byte output parity against it in manual-range mode.
 - Writing a full copy of the video for every edit. `--out` keeps that behaviour
   where it is wanted.
 
-[Unreleased]: https://github.com/steamvogue/djgyrofix/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/steamvogue/djgyrofix/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/steamvogue/djgyrofix/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/steamvogue/djgyrofix/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/steamvogue/djgyrofix/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/steamvogue/djgyrofix/compare/v0.7.1...v0.8.0

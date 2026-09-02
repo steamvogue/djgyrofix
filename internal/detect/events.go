@@ -35,7 +35,10 @@ func plausibilityGate(times []float64, raw []quat.Q, velocities []vec3, interval
 		}
 		if index > 0 {
 			step := times[index] - times[index-1]
-			if step <= 0 || step > 3.0*interval {
+			if step <= 0 {
+				implausible[index] = true
+			} else if step > 3.0*interval && index+1 < len(times) && times[index+1] <= times[index] {
+				// Non-monotonic timestamp jump anomaly, not a standard telemetry transmission gap.
 				implausible[index] = true
 			}
 		}
@@ -282,16 +285,21 @@ func classify(bins binned, baselines, thresholds, times []float64, rawFirst, raw
 	var energies vec3
 	motionSum := 0.0
 	residualSum := 0.0
+	acrossSum := 0.0
 	for index := rawFirst; index <= rawLast; index++ {
 		for axis := 0; axis < 3; axis++ {
 			energies[axis] += bins.axisEnergy[index][axis]
 		}
 		motionSum += bins.motion[index] * bins.motion[index]
 		residualSum += bins.metrics[index] * bins.metrics[index]
+		if index < len(bins.acrossEnergy) {
+			acrossSum += bins.acrossEnergy[index] * bins.acrossEnergy[index]
+		}
 	}
 	binCount := float64(rawLast - rawFirst + 1)
 	motionRMS := math.Sqrt(motionSum / binCount)
 	residualRMS := math.Sqrt(residualSum / binCount)
+	acrossRMS := math.Sqrt(acrossSum / binCount)
 
 	event := Event{
 		StartSeconds:  startSeconds,
@@ -318,6 +326,18 @@ func classify(bins binned, baselines, thresholds, times []float64, rawFirst, raw
 		event.Action = ActionNone
 		event.Note = "residual tracks intentional motion"
 		return event, true
+	}
+	// When the aircraft is turning and the residual is predominantly along the
+	// local rotation axis, it represents acceleration or deceleration of the
+	// turn (control input) rather than the rotation axis wobbling (airframe vibration).
+	if motionRMS > params.MotionDPS*0.5 && residualRMS > 0 && len(bins.acrossEnergy) > 0 {
+		acrossRatio := acrossRMS / residualRMS
+		if acrossRatio < 0.35 {
+			event.Class = ClassMotion
+			event.Action = ActionNone
+			event.Note = "residual is along rotation axis (control input)"
+			return event, true
+		}
 	}
 
 	duration := endSeconds - startSeconds
@@ -395,12 +415,19 @@ func dominantAxes(energies vec3) []string {
 // apart, which separates a single impact from sustained jitter.
 func localPeakCount(values []float64, thresholds []float64) int {
 	var candidates []int
+	if len(values) > 1 && values[0] >= thresholds[0] && values[0] > values[1] {
+		candidates = append(candidates, 0)
+	}
 	for index := 1; index+1 < len(values); index++ {
 		if values[index] >= thresholds[index] &&
 			values[index] >= values[index-1] &&
 			values[index] > values[index+1] {
 			candidates = append(candidates, index)
 		}
+	}
+	last := len(values) - 1
+	if len(values) > 1 && values[last] >= thresholds[last] && values[last] >= values[last-1] {
+		candidates = append(candidates, last)
 	}
 	sort.SliceStable(candidates, func(a, b int) bool { return values[candidates[a]] > values[candidates[b]] })
 	var selected []int

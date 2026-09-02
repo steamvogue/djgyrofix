@@ -86,3 +86,20 @@ func TestAcrossAxisSeparatesRateChangeFromWobble(t *testing.T) {
 		t.Errorf("the two are not separated: %.2f against %.2f", acrossShare, alongShare)
 	}
 }
+
+func TestAlongAxisManeuverProducesNoActionableEvents(t *testing.T) {
+	const rate, count = 200.0, 4000
+	alongTrack := spin(rate, count, func(i int) [3]float64 {
+		return [3]float64{0, 0, 300 + 60*math.Sin(float64(i)*0.7)}
+	})
+	result, err := detect.Run(points(alongTrack, rate), detect.Defaults())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range result.Events {
+		if event.Action != detect.ActionNone {
+			t.Errorf("along-axis rate ripple produced an actionable %s event (action=%s) at %.3f-%.3f (severity %.1f, note=%q)",
+				event.Class, event.Action, event.StartSeconds, event.EndSeconds, event.Severity, event.Note)
+		}
+	}
+}
