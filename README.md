@@ -124,7 +124,7 @@ Four kinds of event, and only one of them gets reconstructed:
 djgyrofix fix DJI_0042.MP4
 
 # Detect more, if footage still shakes after a repair
-djgyrofix fix --apply --floor-dps 20 DJI_0042.MP4
+djgyrofix fix --apply --force --floor-dps 20 DJI_0042.MP4
 
 # Let it pick settings, and refuse footage it can't help
 djgyrofix fix --auto --apply DJI_0042.MP4
@@ -137,7 +137,9 @@ djgyrofix scan --format csv DJI_*.MP4 > events.csv
 djgyrofix fix --apply --jobs 8 DJI_*.MP4
 ```
 
-Every flag is in the [command reference](docs/USAGE.md).
+Every flag is in the [command reference](docs/USAGE.md), including a
+[ladder to work down](docs/USAGE.md#if-it-still-shakes) when footage still
+shakes after a repair.
 
 ## Your originals are safe
 

@@ -10,7 +10,10 @@ Every flag djgyrofix accepts, what it does, and the recipes worth keeping.
 - [Correction flags](#correction-flags)
 - [Safety flags](#safety-flags)
 - [Output flags](#output-flags)
+- [If it still shakes](#if-it-still-shakes)
+- [Comparing settings by eye](#comparing-settings-by-eye)
 - [Which knobs actually matter](#which-knobs-actually-matter)
+- [Which version am I running](#which-version-am-i-running)
 - [Exit codes](#exit-codes)
 
 ## The five commands
@@ -206,6 +209,76 @@ Accepted by `scan` and `fix`.
 `info` also takes `--all-variants`, which shows what every field path would find
 — useful when sniffing guesses wrong on a camera nobody has tested.
 
+## If it still shakes
+
+Work down this ladder. Each step is a real thing to try, in the order that pays
+off, and the last two are the honest answer when the metadata is not the
+problem.
+
+**1. Switch correction mode.** The blur smooths a whole event; run-repair
+replaces only the samples that are out of trend and leaves the manoeuvre around
+them alone.
+
+```bash
+djgyrofix fix --apply --force --repair runs DJI_0042.MP4
+```
+
+**2. Lower the floor.** This is the strongest knob in the tool. The default of
+60 °/s only admits transients far above the real noise floor, which on measured
+footage sits near 3 °/s.
+
+```bash
+djgyrofix fix --apply --force --repair runs --floor-dps 20 DJI_0042.MP4
+```
+
+Below about 10 the false positives start: on a clip known to be good, 15 still
+reports one event and 10 reports six. Twenty is the recommended step.
+
+**3. Check the verdict, not just the events.** If `scan` says `upstream`, no
+amount of tuning will help — the noise floor itself is the defect.
+
+```bash
+djgyrofix scan --format json DJI_0042.MP4 | jq '.advice'
+```
+
+**4. Accept the ceiling.** Three things are mixed together in shaky stabilized
+footage and this tool addresses only the first:
+
+- Transients in the metadata — what it repairs.
+- Genuine airframe motion that stabilization amplifies. Soft mounting, props,
+  tune.
+- Rolling-shutter wobble from the sensor, which is not in the metadata at all.
+  Gyroflow's own rolling-shutter correction handles it, given the right readout
+  time.
+
+**5. Try it on Gyroflow's side.** Pilots report the Complementary integration
+method and the low-pass filter helping on affected units.
+
+## Comparing settings by eye
+
+No metric in this tool has proved as reliable as watching the stabilized output,
+so the workflow that matters is producing candidates and comparing them. `--out`
+never touches the original, so you can make as many as you like:
+
+```bash
+djgyrofix fix --apply --floor-dps 20 --out A_blur.MP4  DJI_0042.MP4
+djgyrofix fix --apply --floor-dps 20 --repair runs --out B_runs.MP4 DJI_0042.MP4
+djgyrofix fix --apply --profile aggressive --floor-dps 20 --out C_aggr.MP4 DJI_0042.MP4
+```
+
+Then stabilize all three and watch the same manoeuvre in each. Read the
+predicted numbers as a hint, not a verdict:
+
+```bash
+djgyrofix fix --repair runs --floor-dps 20 --format json DJI_0042.MP4 \
+  | jq '{clip: (1 - .clip_score_after/.clip_score_before), region: (1 - .score_after/.score_before), repair}'
+```
+
+The clip-wide figure falls when correction misses something. The in-region
+figure cannot, because it only measures where detection looked — read them as a
+pair, and remember a low clip-wide number on otherwise clean footage just means
+there was little wrong to begin with.
+
 ## Which knobs actually matter
 
 Not all of these bite on all footage, and it is better to know which.
@@ -230,6 +303,30 @@ They are not decorative in principle — they drive the threshold whenever the
 adaptive terms exceed the floor, which happens on genuinely noisy footage and on
 any clip once the floor is lowered past roughly 14 °/s. They simply have nothing
 to do while the floor sits above them.
+
+## Which version am I running
+
+Flags are added over time, and an older binary answers an unknown flag by
+printing its usage block — which looks like a syntax error and is not one.
+
+```bash
+djgyrofix version
+djgyrofix fix --help          # every flag this build accepts
+```
+
+If a flag from this document is missing, the binary predates it. Tagged builds
+are on the [releases page](https://github.com/steamvogue/djgyrofix/releases/latest);
+every push to `main` also publishes Windows builds as 30-day artifacts, which is
+where a feature lands before it is released.
+
+Feature availability:
+
+| Flag | Since |
+|---|---|
+| `--auto` | 0.3.0 |
+| `--style` | 0.4.0 |
+| `--repair runs` | 0.6.0 |
+| across-axis run selection | 0.7.0 |
 
 ## Exit codes
 
