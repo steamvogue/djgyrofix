@@ -52,7 +52,7 @@ func (o *options) registerDetection(flags *flag.FlagSet) {
 	flags.StringVar(&o.style, "style", "normal", "flying: cinematic | normal | freestyle (sets the baseline window)")
 	flags.Float64Var(&o.sensitivity, "sensitivity", 1.0, "scale all thresholds, 0.1-3.0 (higher detects more)")
 	flags.Float64Var(&o.madK, "mad-k", 0, "Hampel sigma multiplier (default from profile)")
-	flags.DurationVar(&o.baselineWindow, "baseline-window", 0, "rolling baseline half-width (default 5s)")
+	flags.DurationVar(&o.baselineWindow, "baseline-window", 0, "rolling baseline half-width (default: from --style)")
 	flags.Float64Var(&o.floorDPS, "floor-dps", 0, "absolute residual floor in °/s (default from profile)")
 	flags.Var(&o.minSeverity, "min-severity", "ignore events scoring below this, 0-10 (default from profile)")
 	flags.Float64Var(&o.imuFullScale, "imu-full-scale", 0, "plausibility gate in °/s (default 2000)")
