@@ -364,15 +364,16 @@ outside. A longer window has nothing specific to reach for. Those regions had
 their peak rate cut by a median 35% and remained above threshold anyway, which
 is what a bounded correction aimed at a genuinely large transient looks like.
 
-**Consequence for the advice.** `--sensitivity 1.3` is currently suggested
-whenever any region remains detectable. On this clip that condition is true at
-every cap tested, so the tool recommends correcting harder off a number that
+**Consequence for the advice, since applied.** `--sensitivity 1.3` was suggested
+whenever any region remained detectable. On this clip that condition holds at
+every cap tested, so the tool recommended correcting harder off a number that
 more correction demonstrably does not fix in any way the residual metric
-registers. The 0.10.0 report already refuses to treat the warning as a failure
-and asks for a Gyroflow preview first. The measurement above says the trigger
-itself should move: gate the suggestion on in-region improvement, the way the
-`--smoothing-ms` suggestion already is, and report the warning as a bounded
-ceiling reached rather than as a count of defects outstanding.
+registers. It now shares the in-region gate the `--smoothing-ms` suggestion
+already used, so it fires only when the correction also missed what it aimed at,
+and the warning states where the bounded correction settles instead of counting
+defects. Its old justification — that the leftover residual sat at the region
+edges and wanted more weight there — was removed rather than reworded, because
+the peak locations above do not support it.
 
 ## Gyroflow's glitch filtering, and where it does not overlap
 

@@ -299,12 +299,25 @@ func tuning(in Input, actionable int, verdict Verdict) []Suggestion {
 			When: "visible twitching remains inside the listed regions",
 		})
 	}
-	if in.ResidualRegions > 0 {
+	// A region that still trips the detector after the bounded passes is not on
+	// its own evidence of anything. Measured across one to eight passes on the
+	// reference clip, the count keeps falling long after the in-region residual
+	// has stopped improving, and the regions that clear are not the milder ones
+	// — their median peak rate is higher than the survivors'. It cannot reach
+	// zero at any cap, so a suggestion fired on the bare count fires forever.
+	//
+	// The in-region figure is what separates a bounded ceiling from real
+	// under-correction, so this shares that gate. The earlier wording also
+	// claimed the leftover residual sat at the region edges; locating each
+	// surviving peak inside its region put it as often in the middle, so the
+	// claim is gone rather than restated.
+	if in.ResidualRegions > 0 && in.Scored && in.ImprovementPercent < weakCorrection {
 		suggestions = append(suggestions, Suggestion{
 			Flags: "--sensitivity 1.3",
-			Why: fmt.Sprintf("%d corrected region%s remain above the detector; 1.3 lowers the threshold "+
-				"and gives their residual edges more correction weight",
-				in.ResidualRegions, plural(in.ResidualRegions)),
+			Why: fmt.Sprintf("%d corrected region%s remain above the detector and the correction removed "+
+				"only %.1f%% of the residual it aimed at; 1.3 lowers the threshold, which both admits "+
+				"more events and widens the ones already found",
+				in.ResidualRegions, plural(in.ResidualRegions), in.ImprovementPercent),
 			When: "the stabilized video still twitches at those times",
 		})
 	}

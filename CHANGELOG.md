@@ -6,6 +6,19 @@ Notable changes to djgyrofix. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **The residual-region warning no longer reads as work outstanding, and no
+  longer asks for more correction on its own.** Sweeping the bounded correction
+  from one pass to eight showed the count of regions still tripping the detector
+  falls indefinitely without the in-region residual following it, and that the
+  regions which clear have a *higher* median peak rate than those that do not.
+  `--sensitivity 1.3` is now suggested only when the in-region figure also shows
+  the correction missed, sharing the gate `--smoothing-ms` already used, and the
+  warning states where the bounded correction settles rather than counting
+  defects. The claim that the leftover residual sat at region edges is gone:
+  locating each surviving peak put it as often in the middle. See FINDINGS.
+
 ### Added
 
 - **Detection changes now show up as a reviewable diff.** `TestDetectionGolden`

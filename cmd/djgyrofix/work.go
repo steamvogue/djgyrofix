@@ -158,9 +158,15 @@ func analyzeAuto(source *pipeline.Source, opts *options, result *analysis) error
 	scopePadding := math.Max(params.GapSeconds, params.EnvelopeBlurSeconds)
 	remaining, outside := residualEventCounts(postCorrection, correctionScopes, scopePadding)
 	if remaining > 0 {
+		// Deliberately phrased as a ceiling rather than a defect count. Adding
+		// passes drives this number down indefinitely without moving the
+		// residual it stands for, so a reader who treats it as work outstanding
+		// will correct footage that is already as good as the bounded passes
+		// can make it.
 		result.report.Warnings = append(result.report.Warnings,
-			fmt.Sprintf("%d original correction region(s) remain detectable after %d bounded pass(es)",
-				remaining, correctionPasses))
+			fmt.Sprintf("%d of %d corrected region(s) still trip the detector after %d bounded pass(es); "+
+				"that is where the bounded correction settles, not a count of defects left in the video",
+				remaining, len(actionableEvents(correctionScopes)), correctionPasses))
 	}
 	if outside > 0 {
 		result.report.Warnings = append(result.report.Warnings,

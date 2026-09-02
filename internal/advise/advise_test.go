@@ -190,3 +190,60 @@ func hasFlag(suggestions []advise.Suggestion, flags string) bool {
 	}
 	return false
 }
+
+// TestResidualRegionsAloneDoNotAskForMoreCorrection pins the gate added after
+// measuring the bounded correction across one to eight passes: the count of
+// regions still tripping the detector falls indefinitely without the in-region
+// residual moving with it, so it cannot on its own justify correcting harder.
+func TestResidualRegionsAloneDoNotAskForMoreCorrection(t *testing.T) {
+	tests := []struct {
+		name        string
+		improvement float64
+		want        bool
+	}{
+		{"bounded ceiling reached", 84.7, false},
+		{"just inside the weak-correction gate", 39.9, true},
+		{"correction genuinely missed", 12.0, true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			input := base()
+			input.Events = []detect.Event{smooth(1, 2, 9)}
+			input.AffectedSeconds, input.AffectedFraction = 1, 1.0/30
+			input.ResidualRegions = 43
+			input.Scored = true
+			input.ImprovementPercent = test.improvement
+			input.ClipImprovementPercent = 5
+
+			got := false
+			for _, suggestion := range advise.Evaluate(input).Suggestions {
+				if suggestion.Flags == "--sensitivity 1.3" {
+					got = true
+					if strings.Contains(suggestion.Why, "edge") {
+						t.Errorf("the edge claim came back; the residual is spread through the region: %s", suggestion.Why)
+					}
+				}
+			}
+			if got != test.want {
+				t.Errorf("suggested --sensitivity 1.3 = %v at %.1f%% in-region, want %v",
+					got, test.improvement, test.want)
+			}
+		})
+	}
+}
+
+// TestUnscoredResidualRegionsStaySilent covers the manual path, where nothing
+// scored the correction. Without the in-region figure there is no way to tell a
+// ceiling from a miss, and guessing would fire on every such run.
+func TestUnscoredResidualRegionsStaySilent(t *testing.T) {
+	input := base()
+	input.Events = []detect.Event{smooth(1, 2, 9)}
+	input.AffectedSeconds, input.AffectedFraction = 1, 1.0/30
+	input.ResidualRegions = 43
+
+	for _, suggestion := range advise.Evaluate(input).Suggestions {
+		if suggestion.Flags == "--sensitivity 1.3" {
+			t.Errorf("an unscored run guessed at under-correction: %+v", suggestion)
+		}
+	}
+}

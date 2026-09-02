@@ -114,5 +114,4 @@ run-repair 2421 runs interpolated (21933 quaternions)  10 too long  44 motion-li
 writes     39542 quaternions in 1385 samples
 residual   84.7% reduced in region  5.0% clip-wide
 verdict    patch
-suggests   --sensitivity 1.3
-warning    43 original correction region(s) remain detectable after 3 bounded pass(es)
+warning    43 of 81 corrected region(s) still trip the detector after 3 bounded pass(es); that is where the bounded correction settles, not a count of defects left in the video

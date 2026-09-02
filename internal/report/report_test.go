@@ -224,7 +224,7 @@ func TestAppliedReportExplainsTheResultAndGatesARetryOnVisibleTwitching(t *testi
 	value.Repair = &correct.RepairStats{
 		RunsReplaced: 2372, SamplesReplaced: 21843, RunsTooLong: 10, RunsRealMotion: 44,
 	}
-	value.Warnings = []string{"42 original correction region(s) remain detectable after 3 bounded pass(es)"}
+	value.Warnings = []string{"42 of 80 corrected region(s) still trip the detector after 3 bounded pass(es)"}
 	value.Advice = &advise.Advice{
 		Verdict:       advise.VerdictPatch,
 		Headline:      "81 correctable events over 19.82 s (3.99% of the clip) — this is what djgyrofix is for",

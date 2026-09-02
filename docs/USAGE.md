@@ -225,14 +225,19 @@ The text report now prints this workflow with commands that preserve the flags
 from the scan or dry run.
 
 **1. Preview the stabilized result.** Check the listed event times in Gyroflow.
-If they are smooth, stop. “Regions remain detectable” means residual signal is
-still above the detector after its bounded passes; it does not by itself mean
-the repair is visibly bad.
+If they are smooth, stop. “N of M corrected regions still trip the detector” is
+not a count of defects left in your video. Measured across one to eight
+correction passes on the reference clip, that number keeps falling long after
+the residual it stands for has stopped improving, and the regions that clear are
+not the milder ones — so it marks where the bounded correction settles, nothing
+more.
 
-**2. Follow a residual suggestion only when it matches what you see.** When the
-report suggests `--sensitivity 1.3`, the higher sensitivity lowers the detection
-threshold and gives the residual edges more correction weight. Restore the
-original before retrying an in-place patch:
+**2. Follow a residual suggestion only when it matches what you see.** The
+report suggests `--sensitivity 1.3` only when the correction also removed little
+of the residual it aimed at, which is the signal that it genuinely missed rather
+than finished. The higher sensitivity lowers the detection threshold, which both
+admits more events and widens the ones already found. Restore the original
+before retrying an in-place patch:
 
 ```bash
 djgyrofix revert DJI_0042.MP4
