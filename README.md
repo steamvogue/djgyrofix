@@ -6,149 +6,88 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/steamvogue/djgyrofix)](https://goreportcard.com/report/github.com/steamvogue/djgyrofix)
 [![License: GPL v3](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 
-A dependency-free Go CLI that detects and corrects transient attitude
-deviations in DJI MP4/MOV metadata, in place, with exact revert.
+**Your DJI footage looks fine until Gyroflow stabilizes it, and then it shakes.
+This repairs the gyro data so it doesn't.**
 
-## What's new in 0.5.0
+[**Download →**](https://github.com/steamvogue/djgyrofix/releases/latest)
+· [Command reference](docs/USAGE.md)
+· [Changelog](CHANGELOG.md)
 
-- **DJI stores every attitude twice, and djgyrofix was measuring the seam.**
-  Differencing consecutive stored samples produced a square wave at Nyquist
-  that accounted for three quarters of the residual on real footage and
-  inflated the apparent noise floor tenfold. See
-  [DJI stores every attitude twice](#dji-stores-every-attitude-twice).
-- Thresholds fall with it, so real transients stop hiding inside phantom noise.
-  A clip considered entirely normal now reports one 86 ms event over 228
-  seconds instead of two, at a 2.0 °/s floor instead of 10.5.
-- The `upstream` noise level is recalibrated from 90 °/s to 45, the previous
-  value having been derived from a floor that was mostly sampling artifact.
+Windows, macOS and Linux. No install, no dependencies, one binary.
 
-## What's new in 0.4.0
+---
 
-- `--style cinematic | normal | freestyle` sets the rolling baseline window to
-  ±5 s, ±12 s or ±20 s. See [Flight style](#flight-style).
-- **The default window is now ±12 s, up from ±5 s.** A burst shorter than the
-  window inflates the threshold meant to catch it; a real 2-second burst was
-  only 12% detected. `--style cinematic` restores the old behaviour exactly.
-- Residual reduction is reported clip-wide as well as inside the corrected
-  regions. The in-region figure alone read 91.6% on footage that was still
-  visibly shaking.
+## Quick start
 
-## What's new in 0.3.0
+Three commands. Scan first — it opens the video read-only and can't hurt it.
 
-- Every automatic scan and fix ends in a
-  [diagnosis](#reading-the-diagnosis): one of `patch`, `upstream`, `review` or
-  `clean`, the measurements behind it, and the flags worth trying next.
-- The noise floor is now reported as percentiles and as the share of the clip
-  above a noisy level, which is what makes a resonating stretch visible. The
-  reported baseline is a clip median, and a median cannot tell clean footage
-  from footage that is clean for two thirds of its length.
-- The `upstream` verdict says out loud that a short event list over a high
-  noise floor is a symptom rather than a clean bill of health. The rolling
-  threshold rises with the local floor, so the roughest footage produced the
-  quietest report.
-- [`--auto`](#autopilot) picks the profile, stepping one at a time in a
-  direction the measurement justifies, and refuses footage no profile can fix.
-- The predicted residual reduction is printed on a dry run, where it was
-  already computed and then discarded.
+```bash
+djgyrofix scan DJI_0042.MP4          # what's wrong, and is this the right tool?
+djgyrofix fix --apply DJI_0042.MP4   # repair it
+djgyrofix revert DJI_0042.MP4        # put it back, byte for byte
+```
 
-The 0.3.x releases added the diagnosis and fixed two defects in it found by
-running it on real footage. See the [0.3.0 changelog](CHANGELOG.md#030--2026-09-01) for
-every user-visible change. The 0.2.0 detector rework is
-[recorded there too](CHANGELOG.md#020--2026-09-01); the superseded
-implementation remains on `study`, and every push to `main` publishes
-downloadable Windows builds.
+Then stabilize as you always have. The metadata is fixed inside the original
+file, so nothing about your Gyroflow workflow changes.
 
-## Why this exists
+Prefer not to touch your original at all? Write a copy instead:
 
-If you fly FPV with a DJI air unit, you may have hit this: the raw footage looks
-fine, the goggles feed looks fine — and then RockSteady or Gyroflow turns it
-into a shaking, twitching mess. Stabilization makes it *worse*.
+```bash
+djgyrofix fix --apply --out fixed.MP4 DJI_0042.MP4
+```
 
-That complaint has been building across the FPV community. It is a recurring
-thread on [r/fpv][reddit] for the O4 Lite, and in May 2026 Oscar Liang traced a
-concrete cause on the O4 Pro: DJI [quietly changed the gyro chip][oscar] in
-2026-production O4 Pro Air Units, from the MP66 (MPU-6050) to the 1469D
-(ICM-40609-D) — the same part already used in the standard O4 and O4 Lite, and
-already known for being more sensitive to vibration. DJI's own response to an
-affected customer confirmed the change, described it as an improvement in
-"precision, noise suppression, and temperature drift control", and said
-replacements with the older part were no longer in stock. Mads Tech covers the
-same ground [on video][madstech].
+**`fix` writes nothing without `--apply`.** Run it bare and it tells you exactly
+what it would change.
 
-Here is the part that matters for this tool. **Gyroflow trusts the recorded
-gyro track completely.** It reads those quaternions as ground truth for how far
-to counter-rotate each frame. When the track carries a brief artifact — a
-telemetry dropout, a corrupted sample, or an out-of-sync overshoot after a
-sharp motion-vector change — Gyroflow counter-rotates against it with
-full confidence, and the correction is more violent than the motion it was
-supposed to remove. That is why the stabilized clip can look worse than the
-original: not because stabilization failed, but because it succeeded against bad
-input.
+## The problem
 
-### What djgyrofix can and cannot do
+If you fly FPV with a DJI air unit you may have hit this: the raw footage looks
+fine, the goggles feed looks fine, and then RockSteady or Gyroflow turns it into
+a twitching mess. Stabilization makes it *worse*.
+
+It's a recurring complaint on [r/fpv][reddit] for the O4 Lite, and in May 2026
+Oscar Liang traced a concrete cause on the O4 Pro: DJI
+[quietly changed the gyro chip][oscar] in 2026-production units to a part already
+known for being more sensitive to vibration. Mads Tech covers the same ground
+[on video][madstech].
+
+Here is the part that matters. **Gyroflow trusts the recorded gyro track
+completely.** It reads those quaternions as ground truth for how far to
+counter-rotate each frame. When the track carries a brief artifact — a dropout, a
+corrupted sample, an out-of-sync overshoot after a sharp turn — Gyroflow
+counter-rotates against it with full confidence, and the correction is more
+violent than the motion it was meant to remove. The stabilized clip looks worse
+than the original not because stabilization failed, but because it succeeded
+against bad input.
+
+djgyrofix repairs those artifacts in the metadata, in place, and hands Gyroflow
+something it can trust.
+
+## What it can't do
 
 **It cannot make a noisy IMU into a quiet one.** Nothing in software can. If your
-camera is hard-mounted to a resonating frame, the fix is soft mounting, a better
-tune, and the other checks in Oscar's article — not this tool.
+camera is hard-mounted to a resonating frame, the fix is soft mounting and a
+better tune — not this tool.
 
-What it *can* do is repair the recorded track where the artifact is in the data
-rather than in the airframe: short dropouts, corrupted samples, and brief
-transient deviations that survive into the metadata. It patches those, leaves
-genuine motion alone, and hands Gyroflow something it can trust.
+It also can't help with rolling-shutter wobble, which isn't in the metadata at
+all. Gyroflow's own rolling-shutter correction handles that.
 
-It is also a diagnostic. Every automatic scan ends in a plain-language verdict,
-and there are four of them:
+So it's also a diagnostic. Every scan ends in a plain verdict:
 
-- **`patch`** — a bounded set of artifacts, which is what this tool is for. The
-  block names the predicted improvement and the command to run.
-- **`upstream`** — the noise floor itself is the defect. Soft mounting and a
-  better tune are the fix; nothing in the metadata will help. This one matters
-  most, because it is the case a per-event report reads as good news.
-- **`review`** — detection flagged more than `--max-affected`, so `fix` will
-  refuse. Smoothing that much of a clip degrades everything and fixes nothing.
-- **`clean`** — no correctable artifact. If the footage still shakes after
-  stabilization, try Gyroflow's Complementary integration method or a low-pass
-  filter, both of which pilots report helping on affected units.
+- **`patch`** — a handful of artifacts. This is what the tool is for.
+- **`upstream`** — the noise floor itself is the problem. Go look at the mounting.
+- **`review`** — too much of the clip is flagged to smooth safely.
+- **`clean`** — nothing to repair. If it still shakes, try Gyroflow's
+  Complementary integration or its low-pass filter.
 
 Being told *"this is not a metadata problem"* in ten seconds is worth something
-on its own, when the alternative is another evening of re-mounting a camera.
+when the alternative is another evening of re-mounting a camera.
 
-## Credit
-
-The hard part of this — finding the quaternions inside an undocumented DJI
-protobuf stream and patching them without breaking the container — was worked
-out by **Minsu Kim** ([@kim2160][upstream]) in
-[DJI Gyro Fix][upstream], a GPL-3.0 Python desktop tool. The field paths, the
-variant sniffing, the offset-preserving scanner and the smoothing approach all
-come from that work.
-
-djgyrofix is a Go port and rework of it: a CLI instead of a GUI, automatic
-detection instead of hand-picked time ranges, and in-place patching with exact
-revert instead of writing a full copy. The current transient detector was rebuilt
-after testing the first implementation against the supplied DJI footage. That historical
-implementation remains on the `study` branch; `main` contains the validated
-detector and correction pipeline described below and in
-[the measured findings](docs/FINDINGS.md). It is held to
-[byte-for-byte parity](#golden-parity) with the original, which is the clearest
-way to say that the credit belongs upstream.
-
-If you want a GUI, or you are on Windows or macOS and would rather not touch a
-terminal, [use Minsu Kim's tool][upstream] — it is signed, notarized, and does
-the same core job.
-
-[reddit]: https://www.reddit.com/r/fpv/comments/1mzkd7v/dji_o4_lite_unwatchable_gyroflow_footage_heavy/
-[oscar]: https://oscarliang.com/dji-o4-pro-gyro-stabilization-issue/
-[madstech]: https://www.youtube.com/watch?v=YibY-87yFko
-[upstream]: https://github.com/kim2160/DJIGyroFix
-
-## Try it
-
-The session below runs against a generated fixture (see
-[Fixtures](#fixtures)), so you can reproduce it without DJI footage.
+## What a scan looks like
 
 ```console
-$ djgyrofix scan sample.MP4
-sample.MP4  wm169  30 s  1500 samples  6000 quaternions @ 200.0 Hz
+$ djgyrofix scan DJI_0042.MP4
+DJI_0042.MP4  wm169  30 s  1500 samples  6000 quaternions @ 200.0 Hz
 baseline 0.6 °/s   threshold 60.0 °/s (rolling)
 
   #  start        end          dur     type     sev  axes   peaks  action
@@ -166,712 +105,135 @@ diagnosis: 4 correctable events over 1.49 s (4.98% of the clip) — this is what
   djgyrofix is for
   noise floor 0.6 °/s typical, 0.6 °/s p90 — quiet enough that these events
   stand out as artifacts
-  predicted residual reduction 10.1% clip-wide, 100.0% inside the
-  corrected regions
-  try --no-bridge — if you would rather no orientation were reconstructed
-      at all
-  next: djgyrofix fix --apply sample.MP4
-
-$ djgyrofix fix --apply sample.MP4
-...
-patched 418 quaternions in 105 samples, 6680 bytes
-journal: sample.MP4.gyrofix.json
-transient residual reduced 10.1% clip-wide, 100.0% inside the corrected regions
-
-$ djgyrofix revert sample.MP4
-sample.MP4: restored, matches original digest — 6680 bytes (1670 writes)
+  next: djgyrofix fix --apply DJI_0042.MP4
 ```
 
-## Working with your own footage
+Four kinds of event, and only one of them gets reconstructed:
 
-Always scan before you patch. The scan opens the file read-only and ends in a
-[diagnosis](#reading-the-diagnosis) that says whether this tool is even the
-right one for the problem.
+| Class | What it is | What happens |
+|---|---|---|
+| `dropout` | Telemetry corruption, valid data either side | Interpolated |
+| `impact` | A brief single spike, physically plausible | Smoothed |
+| `jitter` | Sustained shaking, several peaks | Smoothed |
+| `motion` | You actually flew like that | **Left alone** |
 
-```bash
-djgyrofix scan DJI_0042.MP4
-```
-
-If the verdict is `patch`, patch it. `fix` is a dry run until
-you pass `--apply`, so you can see exactly what would change first:
+## Common tasks
 
 ```bash
-djgyrofix fix DJI_0042.MP4           # what would change
-djgyrofix fix --apply DJI_0042.MP4   # do it
-```
+# See what a repair would change, without writing
+djgyrofix fix DJI_0042.MP4
 
-Then stabilize as usual. Because the metadata is fixed in place, nothing changes
-about your Gyroflow workflow:
+# Detect more, if footage still shakes after a repair
+djgyrofix fix --apply --floor-dps 20 DJI_0042.MP4
 
-```bash
-gyroflow DJI_0042.MP4 --preset mypreset.gyroflow
-```
+# Let it pick settings, and refuse footage it can't help
+djgyrofix fix --auto --apply DJI_0042.MP4
 
-If the result is not what you hoped, put the file back exactly as it was:
+# Replace only the bad samples instead of smoothing around them (newer, opt-in)
+djgyrofix fix --apply --repair runs DJI_0042.MP4
 
-```bash
-djgyrofix revert DJI_0042.MP4
-```
-
-That is a byte-for-byte restore, not an approximation — the sidecar journal
-holds the original value of every four-byte range that was touched. If you would
-rather not have originals modified at all, `--out fixed.MP4` writes a patched
-copy and leaves the source alone.
-
-For a folder of clips from one session:
-
-```bash
-djgyrofix scan --format csv DJI_*.MP4 > events.csv   # review first
+# A whole session
+djgyrofix scan --format csv DJI_*.MP4 > events.csv
 djgyrofix fix --apply --jobs 8 DJI_*.MP4
 ```
 
-**A first run on footage you care about is worth doing on a copy**, whatever the
-revert guarantees say. This is beta software operating on your originals.
+Every flag is in the [command reference](docs/USAGE.md).
 
-## What it does
+## Your originals are safe
 
-DJI MP4s carry a timed-metadata track (a `djmd` sample entry, or a handler name
-containing `dji meta` / `cam meta`) holding per-sample absolute orientation
-quaternions in protobuf wire format: four little-endian `float32` values in
-`(w, x, y, z)` order.
+Every repair writes a small sidecar journal holding the original value of every
+byte it touched, so `revert` restores bit-exact original state in milliseconds.
+No multi-gigabyte copy needed.
 
-Gyroflow reads that track as ground truth for how far to counter-rotate each
-frame. When the track contains a brief transient deviation — telemetry dropout,
-RF corruption, or an out-of-sync response around a sharp vector change —
-Gyroflow's correction over those samples is abrupt, and stabilized output can
-look *worse* than the original footage.
+- Only bytes inside the DJI metadata are ever modified. The video is untouched.
+- The file size never changes, so the container stays valid.
+- No ffmpeg, no re-encode, no remux.
+- A file that already carries a journal is refused rather than patched twice.
 
-The fix is a byte-level in-place patch: the same four-byte float slots are
-overwritten with filtered values. Sample sizes never change, so `stsz`, `stco`
-and `co64` stay valid and the container is untouched.
-
-### What it deliberately does not do
-
-**No ffmpeg, no re-encode, no remux.** `-c copy` typically drops or mangles the
-private `djmd` track, and any remux rewrites `moov`, invalidating every sample
-offset. There is nothing to encode here.
-
-**No protobuf codegen, no math library.** Decoding into structs and
-re-serializing loses byte offsets and can change varint lengths. A quaternion
-library introduces ordering and rounding divergence from the Python reference,
-which would destroy the cheapest validation available — see
-[Golden parity](#golden-parity) below.
+**Still, a first run on footage you care about is worth doing on a copy.** This
+is beta software operating on your originals.
 
 ## Install
 
-### Download a binary
-
-Tagged, stable archives are on the
-[releases page](https://github.com/steamvogue/djgyrofix/releases). Builds are
-published for Linux, macOS and Windows on both amd64 and arm64, with a
-`SHA256SUMS` file alongside them.
-
-Every push to `main` also produces fresh Windows amd64 and arm64 bundles on the
-[Main branch builds](https://github.com/steamvogue/djgyrofix/actions/workflows/development-build.yml)
-page. Open the newest successful run, scroll to **Artifacts**, and download
-`djgyrofix-main-windows-amd64` for an ordinary Intel/AMD Windows PC. These are
-30-day development artifacts rather than tagged releases; each bundle contains
-`djgyrofix.exe`, its checksum, the README, licence and changelog.
+Download a binary from the [releases page](https://github.com/steamvogue/djgyrofix/releases/latest)
+— Linux, macOS and Windows, amd64 and arm64, with `SHA256SUMS` alongside.
 
 ```bash
-# Linux / macOS
-tar xzf djgyrofix-v0.5.1-linux-amd64.tar.gz
-sudo install djgyrofix-v0.5.1-linux-amd64/djgyrofix /usr/local/bin/
+tar xzf djgyrofix-*-linux-amd64.tar.gz
+sudo install djgyrofix-*-linux-amd64/djgyrofix /usr/local/bin/
 djgyrofix version
 ```
 
-On macOS the binary is not notarized, so Gatekeeper will block the first run.
-Either right-click → Open, or clear the quarantine flag:
+On macOS the binary is not notarized, so Gatekeeper blocks the first run. Either
+right-click → Open, or `xattr -d com.apple.quarantine /usr/local/bin/djgyrofix`.
 
-```bash
-xattr -d com.apple.quarantine /usr/local/bin/djgyrofix
-```
-
-### With Go
-
-Go 1.25 or later. There are no module requirements, so nothing else is
-downloaded.
+With Go 1.25 or later:
 
 ```bash
 go install github.com/steamvogue/djgyrofix/cmd/djgyrofix@latest
 ```
 
-### From source
+From source: `git clone`, then `make` (fmt, vet, test, build).
+
+Every push to `main` also publishes fresh Windows builds on the
+[Main branch builds](https://github.com/steamvogue/djgyrofix/actions/workflows/development-build.yml)
+page — 30-day development artifacts rather than releases.
+
+## Which cameras work
+
+Three DJI metadata layouts are understood: `wm169`, `wa530` and `oq101`. The
+schema isn't public, so there's no list mapping models to layouts. Run:
 
 ```bash
-git clone https://github.com/steamvogue/djgyrofix.git
-cd djgyrofix
-make            # fmt, vet, test, build
+djgyrofix info --all-variants YOUR_FILE.MP4
 ```
 
-`make dist` cross-compiles release binaries for all six target platforms.
-
-### Which build am I running?
-
-```bash
-djgyrofix version
-```
-
-The version is resolved from the build rather than hardcoded, so it cannot
-disagree with the release it came from. A release binary reports its tag
-(`0.5.1`); one built from a working tree reports the commit
-(`devel+a1b2c3d4e5f6`, with `.dirty` appended for uncommitted changes). Whatever
-it reports is also what gets written into every patch journal, so a journal
-always names the exact build that produced it.
-
-## Commands
-
-| Command  | What it does |
-|----------|--------------|
-| `scan`   | Analyze and report. Never opens a video for writing. |
-| `fix`    | Analyze and patch in place, or to `--out`. Dry run unless `--apply`. |
-| `revert` | Restore original bytes from the sidecar journal. |
-| `verify` | Check a patched file against its journal. |
-| `info`   | Dump track, variant and sample-rate details. |
-
-### Detection flags
-
-```
-  --profile string        conservative | balanced | aggressive   (default "balanced")
-  --style string          cinematic | normal | freestyle         (default "normal")
-  --sensitivity float     scales all thresholds, 0.1-3.0         (default 1.0)
-  --mad-k float           Hampel sigma multiplier                (default 5.0)
-  --baseline-window dur   rolling baseline half-width            (default: from --style)
-  --floor-dps float       absolute residual floor, °/s           (default 60)
-  --min-severity float    ignore events below this score, 0-10   (default 5.0)
-  --imu-full-scale float  plausibility gate, °/s                 (default 2000)
-  --auto                  pick the profile, refuse hopeless footage
-```
-
-### Correction flags
-
-```
-  --repair string         correct an event by blur | runs         (default "blur")
-  --strength float        global multiplier on the weight, 0-1   (default 1.0)
-  --smoothing-ms float    override per-event window derivation   (default: auto)
-  --bridge-max-samples n  max dropout run to SLERP-bridge        (default 3)
-  --no-bridge             disable reconstruction entirely
-  --ranges string         manual override: "12.5-14.0,61-62.25"  (skips detection)
-```
-
-### Safety and I/O flags
-
-```
-  --dry-run               analyze without writing (the default for fix)
-  --apply                 actually write
-  --backup mode           journal | copy | none                  (default "journal")
-  --out FILE              write a patched copy instead of patching in place
-  --force                 override idempotency and safety guards
-  --max-affected float    refuse if flagged duration exceeds this (default 0.15)
-  --variant string        wm169 | wa530 | oq101 | auto           (default "auto")
-  --jobs n                files to process in parallel           (default NumCPU)
-  --format string         text | json | edl | csv                (default "text")
-```
-
-## How detection works
-
-**The signal.** Per-sample angular velocity comes from the delta quaternion,
-`Δq = q[i] ⊗ q[i-1]⁻¹`. That velocity is compared with a centered moving
-average using a ~60 ms radius. The **residual** — velocity minus that local
-motion trend — is what everything downstream measures.
-
-The residual is the whole reason automatic detection is viable. A smooth
-whip-pan or flip mostly cancels, while a brief overshoot or damped low-frequency
-ring after a vector change remains visible. A plain velocity threshold would
-flag every intentional fast move in the clip.
-
-**The threshold** is a sliding Hampel window rather than one global number:
-
-```
-baseline(t)  = median( metric over t ± 5 s )
-σ(t)         = 1.4826 · median( |metric − baseline| over t ± 5 s )
-threshold(t) = max( floor_dps, baseline + k_mad·σ, k_rel·baseline )
-```
-
-The `1.4826` is what makes "5σ" actually mean 5σ; most informal descriptions of
-Hampel omit it and silently change sensitivity. Clips under 15 seconds fall back
-to the reference's global baseline, because a five-second window cannot slide
-over them.
-
-**The plausibility gate** decides what may be *reconstructed* rather than merely
-smoothed. A raw quaternion norm far from unity, a timestamp discontinuity, or a
-duplicate decode time condemns a sample directly. Over-full-scale transitions
-are bridgeable only as a nearby opposing pair that returns near the pre-entry
-trajectory and settles; a lone fast transition remains motion, not corruption.
-
-Only samples that fail this gate are eligible for bridging. This is the line
-between telemetry corruption, which is safe to reconstruct, and real violent
-motion, which is not: bridging a genuine impact fabricates an orientation the
-camera never had, and Gyroflow will then mis-correct with full confidence.
-
-**Classification** then splits supra-threshold events four ways:
-
-| Class     | Signature | Action |
-|-----------|-----------|--------|
-| `dropout` | Short run failing the plausibility gate, valid data either side | SLERP bridge |
-| `impact`  | Under 100 ms, single dominant peak, physically plausible | Short-window smooth |
-| `jitter`  | Sustained high residual, multiple local peaks | Long-window smooth |
-| `motion`  | High residual, but tracking intentional input | **Left alone** |
-
-## How correction works
-
-Dropouts are **interpolated**, not blurred: a SLERP between the last good
-orientation before the run and the first good one after, weighted by timestamp.
-Blurring would destroy the surrounding motion dynamics, where a SLERP preserves
-the real motion exactly and removes only the glitch.
-
-Everything else is smoothed by an **event-confidence envelope**:
-
-```
-excess(t) = (metric(t) − threshold(t)) / (k · threshold(t))
-w_event   = max(event_confidence, max smoothstep(clamp(excess, 0, 1)) in event)
-w(t)      = w_event across the event, with ~100 ms smooth shoulders
-out(t)    = slerp(working(t), smoothed(t), w(t) · strength)
-```
-
-Detection confidence provides a meaningful minimum correction throughout a
-confirmed event, while peak excess can raise the whole event to full correction.
-Keeping one stable core weight avoids manufacturing 10 ms blend steps. Smooth
-shoulders taper to zero outside the event. Confirmed corrupt samples are bridged
-into one working series before that series is filtered, so contained dropout
-and jitter corrections compose without stale boundaries.
-
-The blur radius is derived per event rather than fixed at one global 180 ms:
-roughly 60–100 ms for an impact, and scaled to duration and clamped to 120–400 ms
-for jitter.
-
-Correction is rescanned for at most three passes. Newly exposed smoothing events
-may join later passes only while the union of correction ranges remains under
-`--max-affected`; a newly detected dropout is never added automatically.
-
-## Flight style
-
-`--style` sets one thing: the rolling baseline half-width. It is a separate axis
-from `--profile`, which sets how strict detection is.
-
-| Style | Window | For |
-|---|---|---|
-| `cinematic` | ±5 s | Smooth cruising and slow pans |
-| `normal` | ±12 s | Ordinary mixed flying. **The default.** |
-| `freestyle` | ±20 s | Flips, rolls, hard direction changes |
-
-The window has to be long enough that a burst of ringing cannot dominate its own
-neighbourhood. The threshold is `max(floor, baseline + k·σ, k_rel·baseline)` over
-a sliding window, so a two-second burst inside a ten-second window supplies a
-fifth of the samples σ is computed from — it raises the very bar meant to catch
-it, and hides.
-
-**This matters far less than it appeared to.** These presets were added while
-the apparent noise floor was inflated about tenfold by
-[DJI's duplicated samples](#dji-stores-every-attitude-twice), which made the σ
-term dominate the threshold. With that handled, the threshold on both real
-clips sits at the absolute `--floor-dps` everywhere, and the style makes no
-measurable difference on either. It still does what it says, and it still
-matters on footage whose noise floor is high enough for the σ term to drive the
-threshold — but it is no longer the answer to jitter that survives correction.
-
-Violent flying needs the long window because that is where sustained ringing
-lives. Smooth flying needs less of it, not more: long cruising passes give a
-stable local baseline that a short, more locally adaptive window tracks better.
-
-`--baseline-window` still takes a duration directly and overrides the style. The
-window is capped at a quarter of the clip either way — a half-width reaching
-past half the footage is not rolling any more, and would undo the whole point of
-a local baseline on a short clip.
-
-## DJI stores every attitude twice
-
-Every quaternion in a DJI metadata track appears twice. Measured across two real
-O4 clips, exactly 50.00% of stored quaternions are byte-identical to the one
-before them, in runs of exactly two at a fixed parity. The track presents
-1978 Hz and carries 989 Hz of information.
-
-That matters because angular velocity comes from the difference between
-orientations. Differencing consecutive *stored* samples makes every other
-velocity exactly zero and doubles the rest — a square wave at Nyquist whose
-amplitude scales with how fast the aircraft is rotating, which is largest
-exactly where a transient detector is looking:
-
-```
-79.0005   410.57 °/s
-79.0010     0.00
-79.0015   411.33
-79.0020     0.00
-```
-
-djgyrofix differences against the last *distinct* orientation instead. On the
-clip with real artifacts that takes the whole-clip residual from 118.4 °/s RMS
-to 31.6, and the apparent noise floor from 37.9 °/s to 3.4. Thresholds fall with
-it, and real transients stop hiding inside phantom noise several times their own
-size.
-
-The collapse is decided per file from the measured duplicate share, never
-assumed. A short run of identical orientations is also what a frozen telemetry
-dropout looks like, and locally the two are the same shape — only the global
-statistic separates half a file at a fixed parity from two samples in thousands.
-Collapsing a dropout would erase the signature that makes it reconstructable.
-
-When a file is oversampled, `scan` says so under the baseline line, and
-`--format json` carries it as `duplicate_share`.
-
-## Reading the diagnosis
-
-Every automatic scan or fix ends in a diagnosis block. It exists because the
-numbers above it are only actionable to someone who already knows what a clean
-baseline looks like:
-
-```
-diagnosis: 33% of this clip is an airframe problem rather than a metadata one
-  9.93 s of the clip has a noise floor at or above 30.0 °/s, peaking at
-  113.9 °/s, while the rest of it sits quietly at 0.6 °/s
-  the rolling threshold rises with that floor, so detection goes quiet over
-  the roughest stretches; a short event list here is not a clean bill of
-  health
-  note: soft-mount the air unit, check the tune and the props before patching
-        metadata — no software can turn a resonating IMU into a quiet one
-```
-
-The verdict comes first, then the measurements behind it, then any flags worth
-trying with the measurement that suggests them, then the command to run.
-
-**Why two improvement figures.** The clip-wide number is the honest headline:
-it falls when correction misses something. The in-region number cannot, because
-it is measured only where detection looked — on the real clip it read 91.6%
-while a two-second burst it had covered 12% of was still plainly visible. Read
-them as a pair. A low clip-wide figure on an otherwise clean clip is not a
-fault; it means there was little wrong to begin with, so fixing it perfectly
-moved the overall average very little.
-
-**Why the noise floor is reported as percentiles.** The rolling Hampel
-threshold is what makes whole-file detection viable, and it has a consequence
-the single reported baseline hides: the threshold rises with the local noise
-floor, so a resonating stretch raises its own bar and stops producing events. A
-clip that is rough for its first third reports a *median* baseline identical to
-a clean one. The p10/p50/p90 spread and the share of the clip above the noisy
-level are what make that stretch visible, and the `upstream` verdict is what
-says it out loud. A short event list over rough footage is a symptom, not a
-reassurance.
-
-The noisy level is an absolute 45 °/s and deliberately does not move with
-`--floor-dps`, `--profile` or `--sensitivity`. How much an airframe resonates is
-a property of the aircraft, not of how wide a search you asked for, and the same
-footage changing diagnosis because you changed the search would be a bug. Below
-it sit two real O4 clips at 2.0 and 3.4 °/s typical; above it sits a clip
-resonating end to end, which never drops under 113 °/s. `scan --format json`
-carries the whole thing under `noise` and `advice`.
-
-## Autopilot
-
-`--auto` lets the scan choose the profile, and refuse footage no profile can
-help:
-
-```bash
-djgyrofix scan --auto DJI_0042.MP4          # what it would choose, and why
-djgyrofix fix --auto --apply DJI_0042.MP4   # choose and patch
-```
-
-It is rule-based rather than an optimizer, deliberately. Searching for the
-parameters that minimise a residual score has an obvious degenerate answer —
-smooth everything, and every residual metric improves. Instead it steps one
-profile at a time, in a direction the measurement already justifies:
-
-| Measurement | Move |
-|---|---|
-| Noise floor high across a quarter of the clip or more | **Refuse.** No profile patches an airframe. |
-| More than `--max-affected` flagged | Step one profile stricter; refuse if that is not enough. |
-| Nothing kept, but three or more events just under `--min-severity` | Step one profile looser. |
-| Otherwise | Keep the profile it has. |
-
-Every step is printed and recorded in the report, and a refusal yields to
-`--force`, because the events found on rough footage are still real:
-
-```
-autopilot: balanced profile — refused
-  the noise floor is at or above 30.0 °/s across 33% of the clip; no profile
-    can patch an airframe problem
-```
-
-Autopilot chooses a *profile*, not a whole parameter set — any detection flag
-you pass explicitly still wins over the preset it lands on. It re-runs
-detection only, never the file read or the correction, so the extra cost is
-bounded at two additional detection passes.
-
-## Run-repair
-
-`--repair runs` replaces the samples that do not belong instead of blurring
-everything around them.
-
-The default correction low-passes a whole detected event. That is the wrong
-shape for this artifact. Measured on the real clip, the per-sample residual
-crosses four times its median in 3,145 runs whose **median length is 4.04 ms**
-and whose p90 is 25.28 ms — inside detected events that routinely span hundreds
-of milliseconds. Blurring the event smooths 300 ms of genuine motion to remove
-4 ms of overshoot, which is why corrected footage can go soft while the spike
-survives.
-
-Run-repair finds the supra-threshold runs inside an event and interpolates each
-one along the arc between the last good orientation before it and the first good
-one after — the same SLERP a dropout bridge uses. Every sample outside a run is
-left byte-identical, and an event whose runs were all replaced is not blurred at
-all. On a fixture built from short excursions the blur touches 270 samples where
-run-repair touches 30.
-
-```bash
-djgyrofix fix --apply --repair runs DJI_0042.MP4
-```
-
-**It can fail in a way the blur cannot.** These runs cluster on sharp movements,
-where the true trajectory has the most curvature and an interpolation is most
-likely to invent an orientation the aircraft never held. Two guards bound that:
-
-- A run longer than 30 ms is never replaced. Interpolating the 320 ms outliers
-  seen on real footage would fabricate more attitude than it removed, so those
-  fall back to the blur.
-- A run is only replaced when its endpoints are still consistent with the
-  surrounding motion — when the deviation *departs and returns*. A run whose
-  endpoints have themselves moved somewhere the local trend does not predict is
-  a real movement, and is left alone. On the real clip that test refuses about
-  one run in four hundred, and on a synthetic step it refuses all of them.
-
-The report says what happened:
-
-```
-run-repair: replaced 4901 runs (29112 quaternions); 400 too long to
-interpolate, 12 were real motion
-```
-
-It is opt-in because it is newer and less validated than the blur, and because
-fabricating orientation is the one mistake here that cannot be spotted by
-looking at the output.
-
-## Safety
-
-### The patch journal
-
-The patch is size-preserving and small relative to the video, so duplicating a
-multi-gigabyte file to enable undo is the wrong trade. `djgyrofix` writes a
-sidecar journal instead:
-
-```jsonc
-// DJI_0042.MP4.gyrofix.json
-{
-  "version": 1,
-  "tool": "djgyrofix 0.5.1",
-  "source":   { "name": "DJI_0042.MP4", "size": 21474836480, "mtime": "..." },
-  "track":    { "variant": "wm169", "timescale": 1000, "samples": 36012 },
-  "metadata_digest": "sha256:...",   // djmd sample bytes only, pre-patch
-  "params":   { "profile": "balanced", "sensitivity": 1 },
-  "events":   [ /* the full detection report */ ],
-  "writes":   [ { "off": 1043221, "old": "3f7fd0a1", "new": "3f7fce88" } ]
-}
-```
-
-`revert` restores bit-exact original state from it in milliseconds.
-`metadata_digest` covers the `djmd` sample bytes only, so an unrelated container
-rewrite does not invalidate a journal while any change to the patched data does.
-
-### Backup modes
-
-| Mode | Behaviour |
-|------|-----------|
-| `--backup journal` | **Default.** Sidecar journal only. Roughly 0.4% of the video size on heavily-patched footage, far less on a clean clip. |
-| `--backup copy` | Full `.orig` copy first. Uses `clonefile` on APFS via `cp -c`, and `copy_file_range` on Linux, which the kernel turns into a reflink on btrfs and XFS. |
-| `--backup none` | No undo. Requires `--force`. |
-| `--out FILE` | Original untouched; a patched copy is written instead. |
-
-### Write ordering
-
-1. Every patch is computed in memory before the file is opened for writing.
-2. The journal goes to a temp file, is fsynced, and is renamed into place —
-   **before** the video is touched. If the process dies mid-patch, the journal
-   already on disk is what makes the file repairable.
-3. Writes are applied and fsynced.
-4. The final file size is checked against the journal.
-5. A file that already has a journal is refused unless `--force`, which reverts
-   first and then re-applies rather than compounding the correction.
-
-`--max-affected` refuses to patch when detection flags more than 15% of a clip.
-That is the signature of a bad baseline or genuinely rough footage; blanket
-smoothing there degrades stabilization everywhere and fixes nothing.
-
-## Invariants
-
-| # | Invariant |
-|---|-----------|
-| I1 | Output file size is byte-identical to input size. |
-| I2 | Only bytes inside `djmd` sample payloads are ever modified. |
-| I3 | Every write is exactly 4 bytes at an offset the protobuf scanner found. No varint is ever re-emitted. |
-| I4 | Quaternion component order is `(w, x, y, z)` throughout. |
-| I5 | All internal math is `float64`; only the final store is `float32`. |
-| I6 | Any patched file reverts to bit-exact original state. |
-
-Each of these has a test that fails if it is broken, in
-`cmd/djgyrofix/e2e_test.go`.
-
-## Testing
-
-### Real-footage validation
-
-The current pipeline is exercised against a real 6.5 GB DJI clip — 8m17s of
-59.94 fps video with 993,523 quaternions at 1978 Hz, three tracks (`hvc1` video,
-`djmd` metadata, `dbgi` debug), wm169 layout.
-
-| Step | Result |
-|------|--------|
-| `info` | Selected the `djmd` track over the decoy `dbgi` track, sniffed wm169, 33.33 quaternions per sample |
-| `scan` | 85 events — 73 jitter, 12 impact, **0 dropout**; 30.683 s / 6.17% affected, including 3 bounded discoveries |
-| `fix --apply --out` | 102,824 quaternions in 3,164 samples, 411,268 four-byte writes; transient score reduced 91.6% |
-| rescan patched copy | **No events** at the recalculated rolling threshold |
-| `verify` | All 411,268 ranges correct, digest ok, 6,570,736,456-byte size unchanged |
-| `revert --keep-journal` | Restored 1,645,072 bytes; `cmp` against the original returned identical |
-
-The old plausibility gate reported 17 dropout runs. Requiring an opposing edge,
-a return near the pre-entry trajectory, and a settled continuation rejects all
-17 on this clip as real rapid motion rather than bridgeable corruption. In
-particular, the continuous burst around 257.2 seconds is smoothed as one jitter
-region instead of reconstructed as a dozen dropouts.
-
-This result changed the model behind the tool: the observed defect is not best
-described as generic high-frequency gyro noise. It is a fast but comparatively
-low-frequency, out-of-sync attitude response around sharp vector changes. The
-full measurements, rejected hypotheses and implementation consequences are in
-[Real-footage findings](docs/FINDINGS.md).
-
-Real footage is not committed — it is gigabytes, and the repository has to stay
-cloneable. Everything in `make test` runs against generated fixtures.
-
-```bash
-make test      # unit, property and end-to-end tests
-make race      # the same under the race detector
-make cover     # coverage summary
-make fuzz      # fuzz both parsers
-make parity    # byte-for-byte comparison against the Python reference
-```
-
-### Golden parity
-
-The reference implementation, [`kim2160/DJIGyroFix`](https://github.com/kim2160/DJIGyroFix)
-v0.92, is fully deterministic. With detection disabled and an explicit
-`--ranges`, this port must produce **byte-identical output** to `gyrofix.cli` on
-the same input. Anything else is a bug, not a rounding difference.
-
-```bash
-git clone --depth 1 https://github.com/kim2160/DJIGyroFix.git ../DJIGyroFix
-make parity
-```
-
-This is why the numeric core forbids math libraries, and why every `a*b + c` in
-`internal/quat` is written with an explicit `float64()` conversion around the
-product. Go permits fusing that into a single FMA instruction — and does so on
-arm64 — which rounds once instead of twice and diverges from CPython. The
-conversion is the spec-sanctioned barrier.
-
-Two things are deliberately *not* held to bit parity, both documented at their
-assertions:
-
-- `AngularAccelerationScore` computes `2·acos(cosine)` with `cosine` riding
-  against 1.0, where one ULP of difference between Go's and glibc's `acos` moves
-  the result by a percent. Nothing is written from that value — it only feeds
-  the reported improvement percentage.
-- `--strength` below 1.0 has no equivalent flag in the reference CLI, so it is
-  covered by the Go-side fixture test against `smooth_quaternions` directly
-  rather than end to end.
-
-### Fixtures
-
-Real DJI footage is multi-gigabyte and cannot be committed, so `internal/synth`
-builds MP4s that are structurally identical to the parts of a DJI file this tool
-touches, with artifacts injected at known times. `tools/mkfixture` exposes the
-same generator for manual testing:
-
-```bash
-go run ./tools/mkfixture -o sample.MP4 -kind mixed -variant wm169 -seconds 30
-./djgyrofix scan sample.MP4
-```
-
-`-kind` accepts `clean`, `jitter`, `vector-change`, `vector-jitter`, `impact`,
-`dropout`, `whippan` and `mixed`. The vector pair is the reusable regression:
-the clean change must remain untouched while the damped 6 Hz response is fixed.
-The `whippan` case is the important one: it is fast rotation that detection must
-**never** flag, and false positives on intentional motion are the main risk of
-automating any of this.
-
-If you have real footage, drop it into the parity harness's `corpus/`
-directory and it will be picked up alongside the synthetic files.
-
-## Gyroflow integration
-
-`djgyrofix` fixes the embedded metadata in place, so no handoff format is
-needed — chain the two CLIs:
-
-```bash
-djgyrofix fix --apply DJI_*.MP4 && gyroflow DJI_*.MP4 --preset mypreset.gyroflow
-```
-
-Gyroflow's CLI also supports a watch folder that stabilizes any new video
-appearing in a directory, so `djgyrofix` slots in naturally as a pre-processor
-writing into it.
-
-For keeping a human in the loop over a batch, `--format edl` or `--format csv`
-emits the event ranges for review in an NLE timeline or a spreadsheet, and the
-reviewed ranges feed straight back through `--ranges`.
-
-This does not compete with the settings-side workarounds circulating for the
-affected O4 units — Gyroflow's Complementary integration method, a low-pass
-filter around 5 Hz, better camera soft mounting. Those address a continuously
-noisy gyro signal. djgyrofix addresses discrete artifacts in the recorded track.
-They are different problems and it is entirely reasonable to need both.
-
-## Known limits
-
-- **It does not fix hardware.** A camera bolted to a resonating frame produces
-  a genuinely noisy gyro track, and no amount of post-processing recovers
-  orientation the IMU never measured correctly. If `scan` flags a large fraction
-  of a clip, that is the answer, not a threshold to raise.
-- **Which air units are covered is not fully known.** The three metadata layouts
-  this tool understands (`wm169`, `wa530`, `oq101`) come from the upstream
-  Python tool and were derived from the cameras its author had. The DJI schema
-  is not public, so there is no list mapping models to layouts. Run
-  `djgyrofix info --all-variants YOUR_FILE`: if one path finds a plausible
-  number of quaternions, you are covered, and if none do, please
-  [open an issue](https://github.com/steamvogue/djgyrofix/issues) with that
-  output — a new layout is a small change once someone has a file that needs it.
-- **Fragmented MP4 is rejected outright.** Samples in `moof` boxes are not
-  indexed by this walker, and guessing would put writes at the wrong offsets.
-- **Variant sniffing is a heuristic.** It greps the first samples for a model
-  string. You will eventually hit a camera it guesses wrong on; `info` prints
-  the guess and the field path used, `info --all-variants` shows what each other
-  path would find, and `--variant` overrides it.
-- **A zero-valued quaternion component has no byte slot.** proto3 omits it, and
-  writing a non-zero value there would require resizing the sample. This is a
-  hard error, not a silent skip — skipping would leave the orientation partly
-  updated and corrupt it.
-- **Sub-sample timing is interpolated linearly.** Multiple quaternions share one
-  metadata sample's timestamp span, and no per-quaternion timestamp field is
-  known in the DJI schema. If one exists, finding it would improve everything
-  downstream.
-- **Threshold defaults have one full real-footage validation, not a broad
-  labelled corpus.** Synthetic fixtures cover controlled cases, and the 6.5 GB
-  clip in [the findings](docs/FINDINGS.md) exercises the complete patch, rescan,
-  verify and revert path. Start with `--profile conservative` and a dry run on
-  material you care about.
-- **The diagnosis rests on a narrower calibration still.** The 90 °/s level that
-  separates `patch` from `upstream` has exactly one real measurement below it
-  and one generated measurement above it. It shipped wrong once: derived from
-  `--floor-dps`, it put the real 8m17s clip — 6.17% flagged, 91.6% residual
-  reduction, a clean rescan — on the wrong side of the line and told the pilot
-  to go re-mount a camera. The measurements the block quotes are exact; the
-  single number and the shares that separate one verdict from the next are
-  judgement calls, held in
-  [`internal/detect/noise.go`](internal/detect/noise.go) and
-  [`internal/advise`](internal/advise/advise.go) so they are easy to find and
-  argue with. If a scan calls your footage an airframe problem and you believe
-  it is not, that is worth
-  [an issue](https://github.com/steamvogue/djgyrofix/issues) with the `noise`
-  block from `scan --format json` — it is the measurement this number needs.
-  The diagnosis never patches on its own: a verdict changes what you are told,
-  and, under `--auto`, whether the tool declines. It cannot widen what gets
-  written.
+If one path finds a plausible number of quaternions, you're covered. If none do,
+please [open an issue](https://github.com/steamvogue/djgyrofix/issues) with that
+output — a new layout is a small change once someone has a file that needs it.
+
+Fragmented MP4 is rejected outright rather than guessed at.
+
+## Credit
+
+The hard part of this — finding the quaternions inside an undocumented DJI
+protobuf stream and patching them without breaking the container — was worked
+out by **Minsu Kim** ([@kim2160][upstream]) in
+[DJI Gyro Fix][upstream], a GPL-3.0 Python desktop tool. The field paths, the
+variant sniffing, the offset-preserving scanner and the smoothing approach all
+come from that work.
+
+djgyrofix is a Go port and rework of it: a CLI instead of a GUI, automatic
+detection instead of hand-picked time ranges, and in-place patching with exact
+revert instead of writing a full copy. Its correction core is held to
+byte-for-byte parity with the original — 72 of 72 cases — which is the clearest
+way to say that the credit belongs upstream.
+
+If you want a GUI, or you are on Windows or macOS and would rather not touch a
+terminal, [use Minsu Kim's tool][upstream] — it is signed, notarized, and does
+the same core job.
+
+## How honest is this?
+
+The tool is validated against two real DJI clips and a set of generated
+fixtures, not a broad labelled corpus. Thresholds are judgement calls that have
+already been wrong twice and corrected. What it measures, what it got wrong and
+how that was found are written down rather than glossed:
+
+- [Command reference](docs/USAGE.md) — every flag, with which ones actually bite
+- [Measured findings](docs/FINDINGS.md) — real-footage results and the mistakes
+- [Design notes](docs/DESIGN.md) — architecture, invariants, validation
+
+Known limits worth stating plainly: variant sniffing is a heuristic that will
+eventually guess wrong on some camera; sub-sample timing is interpolated because
+no per-quaternion timestamp is known in the DJI schema; and the diagnosis rests
+on a small number of real measurements, so if it calls your footage an airframe
+problem and you disagree, that's worth an issue.
+
+[reddit]: https://www.reddit.com/r/fpv/comments/1mzkd7v/dji_o4_lite_unwatchable_gyroflow_footage_heavy/
+[oscar]: https://oscarliang.com/dji-o4-pro-gyro-stabilization-issue/
+[madstech]: https://www.youtube.com/watch?v=YibY-87yFko
+[upstream]: https://github.com/kim2160/DJIGyroFix
 
 ## Licence
 
