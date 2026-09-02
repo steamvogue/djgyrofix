@@ -9,16 +9,32 @@ branch; `main` contains the resulting detector and correction pipeline.
 
 ## The artifact model
 
-The supplied failure is not well described as generic high-frequency gyro
-noise. It is a fast but comparatively low-frequency, out-of-sync attitude
-response around sharp motion-vector changes: overshoot and damped ringing remain
-after subtracting a ±60 ms local angular-velocity trend.
+Frame vibration recorded into the attitude track. It survives as brief
+excursions from the local trend — deviations the aircraft did not make, sitting
+on top of the motion it did.
 
-That distinction matters. A plain angular-rate threshold cannot distinguish the
-artifact from an intentional whip, impact or reversal. Detection therefore uses
-the residual from the local trend, a rolling Hampel baseline and a motion-ratio
-test. Plausible rapid motion may be smoothed when its residual shape warrants it,
-but it is never reconstructed as missing orientation.
+This is a correction. The model here was originally written as "a fast but
+comparatively low-frequency, out-of-sync attitude response around sharp
+motion-vector changes", from measurements on a single clip taken before the
+sample duplication below was understood. Two things narrow that claim too far.
+The duplication inflated the residual in proportion to rotation rate, which put
+the apparent artifact where the aircraft was turning hardest and made the
+association with vector changes look stronger than it is. And community reports
+of the same symptom span frames, builds and flying styles, describing vibration
+sensitivity rather than anything specific to turns.
+
+What is measured here, with the duplication collapsed: the per-sample residual
+crosses four times its median in 3,145 runs across the clip, median length
+4.04 ms, p90 25.28 ms. Short, frequent, and distributed rather than confined to
+manoeuvres. Where the deviation points matters more than when it happens — a
+residual across the local rotation axis is the axis wobbling, which is the
+artifact; a residual along it is the aircraft turning faster or slower than the
+trend, which is flying.
+
+That distinction is what detection rests on, because a plain angular-rate
+threshold cannot separate the artifact from an intentional whip, impact or
+reversal. Plausible rapid motion may be smoothed when its residual shape
+warrants it, but it is never reconstructed as missing orientation.
 
 ## What the original pass got wrong
 
@@ -271,7 +287,7 @@ gate, dropout bridging, the weight envelope, the bounded rescans, the diagnosis
 ## Scope of the evidence
 
 This is two real clips plus generated fixtures designed to isolate clean
-vector changes, low-frequency ringing, true short corruption, continuous
+vector changes, sustained ringing, true short corruption, continuous
 over-rate motion and correction composition. It validates this failure mode and
 the full patch/verify/revert path; it is not yet a broad labelled corpus across
 air-unit models, mounts and flight styles. New footage should still be scanned

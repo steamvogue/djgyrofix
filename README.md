@@ -54,7 +54,7 @@ known for being more sensitive to vibration. Mads Tech covers the same ground
 Here is the part that matters. **Gyroflow trusts the recorded gyro track
 completely.** It reads those quaternions as ground truth for how far to
 counter-rotate each frame. When the track carries a brief artifact — a dropout, a
-corrupted sample, an out-of-sync overshoot after a sharp turn — Gyroflow
+corrupted sample, frame vibration recorded into the track — Gyroflow
 counter-rotates against it with full confidence, and the correction is more
 violent than the motion it was meant to remove. The stabilized clip looks worse
 than the original not because stabilization failed, but because it succeeded

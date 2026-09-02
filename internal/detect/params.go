@@ -2,9 +2,9 @@
 // track and decides which of them are safe to correct.
 //
 // The discriminator is the residual: angular velocity minus its own low-passed
-// copy. This exposes brief overshoot and ringing after a vector change as well
-// as broadband noise. Smooth fast rotation mostly cancels, which keeps a plain
-// velocity threshold from flagging every intentional fast move in the clip.
+// copy. This exposes the brief excursions that frame vibration leaves in the
+// track, as well as broadband noise. Smooth fast rotation mostly cancels, which
+// keeps a plain velocity threshold from flagging every intentional fast move.
 package detect
 
 import (

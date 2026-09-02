@@ -27,10 +27,13 @@ are the authority where they disagree:
   as needing verification against Gyroflow's parser for units, axis convention
   and orientation string. That verification has not happened, and shipping an
   unverified guess would be worse than shipping nothing.
-- **§5.1 and §6.2 were replaced after real-footage validation.** The reported defect
-  is a damped, low-frequency attitude overshoot around sharp vector changes,
-  not necessarily high-frequency sensor noise. Detection now compares angular
-  velocity with a ±60 ms local trend, and confirmed events receive an explicit
+- **§5.1 and §6.2 were replaced after real-footage validation.** The defect is
+  frame vibration recorded into the attitude track, surviving as brief
+  excursions from the local trend — median 4 ms on the measured clip, spread
+  across it rather than confined to manoeuvres. An earlier reading of this as
+  an overshoot specific to sharp vector changes came from measurements taken
+  before the sample duplication was understood; see docs/FINDINGS.md.
+  Detection now compares angular velocity with a ±60 ms local trend, and confirmed events receive an explicit
   correction floor with smooth exterior shoulders. Corrupt samples are bridged
   into the working series before it is filtered.
 - **The first implementation is preserved on `study`; the replacement is on
@@ -62,7 +65,7 @@ values in `(w, x, y, z)` order.
 
 Gyroflow reads that track as ground truth for how far to counter-rotate each
 frame. When the track contains a brief transient deviation — telemetry dropout,
-RF corruption, or an out-of-sync response around a sharp vector change —
+RF corruption, or vibration recorded into the attitude track —
 Gyroflow's correction over those samples is abrupt, and stabilized output can
 look *worse* than the original footage.
 
@@ -181,7 +184,7 @@ Ported from `detection.py`, which already gets the core right:
 
 The residual is the right discriminator and the reason automatic detection is
 viable: a smooth whip-pan or flip mostly cancels, while a brief overshoot or
-damped low-frequency ring after a vector change remains visible.
+brief excursion from that trend remains visible.
 
 4. Bin residual energy at 10 ms; metric per bin = RMS.
 

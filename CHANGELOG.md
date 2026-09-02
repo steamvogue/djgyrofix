@@ -6,6 +6,23 @@ Notable changes to djgyrofix. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **The artifact model in the docs was narrower than the evidence.** It
+  described "a fast but comparatively low-frequency, out-of-sync attitude
+  response around sharp motion-vector changes", from one clip measured before
+  the sample duplication was understood. That duplication inflated the residual
+  in proportion to rotation rate, which put the apparent artifact where the
+  aircraft was turning hardest and made the association with vector changes look
+  stronger than it is. Community reports of the same symptom span frames, builds
+  and flying styles and describe vibration sensitivity, not turns.
+
+  Now described as what it is: frame vibration recorded into the attitude track,
+  surviving as brief excursions from the local trend — median 4 ms, spread
+  across the clip rather than confined to manoeuvres. No code change; the
+  detector already worked on the residual rather than on any assumption about
+  when the deviation occurs.
+
 ## [0.8.0] — 2026-09-02
 
 ### Changed
