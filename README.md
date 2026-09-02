@@ -93,7 +93,7 @@ baseline 0.6 °/s   threshold 60.0 °/s (rolling)
   #  start        end          dur     type     sev  axes   peaks  action
   1  00:00:07.980 00:00:09.220 1.240s  jitter   10.0 X/Z    29     smooth
   2  00:00:14.980 00:00:15.050 0.070s  impact   10.0 Y      1      smooth
-  3  00:00:24.920 00:00:25.100 0.180s  jitter   10.0 Y/Z    1      smooth
+  3  00:00:24.920 00:00:25.100 0.180s  jitter   10.0 Y/Z    3      smooth
      note: contains samples that failed the plausibility gate
   4  00:00:25.000 00:00:25.005 0.005s  dropout  9.0  -      1      bridge
 
@@ -118,8 +118,8 @@ next:
   1. Apply the planned correction:
      djgyrofix fix --apply DJI_0042.MP4
      If you prefer to leave corrupt orientation samples untouched, use
-     --no-bridge instead — bridging is the only step that reconstructs
-     orientation instead of smoothing existing samples:
+       --no-bridge instead — bridging is the only step that reconstructs
+       orientation instead of smoothing existing samples:
        djgyrofix fix --apply --no-bridge DJI_0042.MP4
   2. Preview DJI_0042.MP4 in Gyroflow at the listed times.
      If stabilization is smooth, stop — you are done.

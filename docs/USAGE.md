@@ -71,8 +71,8 @@ motion-like and is not interpolated. Its event falls back to bounded smoothing,
 which avoids inventing a new orientation path. The report says what happened:
 
 ```
-run-repair: interpolated 4901 short artifact runs (29112 quaternions)
-  skipped interpolation for 400 long runs and 12 motion-like runs; their events
+run-repair: interpolated 2421 short artifact runs (21933 quaternions)
+  skipped interpolation for 10 long runs and 44 motion-like runs; their events
   used bounded smoothing instead
 ```
 
