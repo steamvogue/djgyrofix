@@ -487,6 +487,47 @@ amplitude; assert the classifier recovers them and, critically, that a synthetic
 **whip-pan produces zero events**. False positives on intentional motion are the
 main risk of automation.
 
+### 9.5 Pinned detection tables
+
+§9.1 is the release gate and it does not cover any of §9.5's ground. Parity runs
+`--ranges`, which skips detection entirely: it proves the numeric core matches
+the Python reference byte for byte and says nothing about which events are found
+or how they are classified. Detection can be badly wrong with parity green.
+
+So `TestDetectionGolden` pins what pass 1 decides and what pass 2 plans in
+response — the event table with each event's class, action, severity, peak rate,
+baseline ratio, axes, peak count and derived window, plus the noise profile,
+run-repair counts, write counts, residual scores and verdict. Tables live in
+`testdata/golden/detection/`. A change to any of it fails the test and prints
+the first line that moved; regenerate with:
+
+```
+go test ./cmd/djgyrofix -run TestDetectionGolden -update
+```
+
+Then read the diff. **The diff is the review** — the harness cannot tell a fix
+from a regression, only that behaviour moved.
+
+What a diff means depends on the fixture, and the two kinds are not equivalent:
+
+- **Synthetic** cases carry ground truth by construction, since the artifact was
+  injected at a known time with a known shape. They run everywhere, including
+  CI. `synth-whippan` finding anything actionable is a false positive on
+  intentional motion, per §9.4.
+- **Corpus** cases carry none. Nobody has labelled which 140 ms of real footage
+  is a wobble and which is a control input, so those tables pin behaviour, not
+  correctness. Treat a diff there as a question to answer at the timestamps that
+  moved — never as a verdict.
+
+Two limits worth stating plainly. The corpus clips are multi-gigabyte and
+gitignored, so those cases skip anywhere the file is absent, CI included; their
+tables are committed regardless, because a table only one machine can regenerate
+is still worth reading on any of them, but it also means a contributor without
+the footage will not be told when their change moves it. And the residual score
+cannot referee a detection change: it is measured with the same detector whose
+definition of residual just moved, so the target and the ruler shift together.
+That is why the tables record the event set itself and not only the score.
+
 ---
 
 ## 10. Gyroflow integration

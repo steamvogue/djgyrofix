@@ -1,0 +1,17 @@
+clip       30.000 s  1500 samples  6000 quaternions @ 200.0 Hz  duplicates 0.0%
+baseline   0.6 dps  threshold 20.0 dps (rolling)
+noise      p10 0.6  p50 0.6  p90 0.6 dps  noisy 0.0% (0.00 s) at >= 45.0 dps
+events     4 found  4 actionable  0 near-miss  1.585 s affected (5.28%)
+
+    #      start        end  class    action    sev  peak_dps   ratio  axes      peaks window_ms
+    1      7.980      9.220  jitter   smooth   10.0     277.1   467.9  X/Z          29     400.0
+    2     14.920     15.080  jitter   smooth   10.0     636.3  1057.8  Y             3     120.0
+    3     24.920     25.100  jitter   smooth   10.0   26795.5 46197.2  Y/Z           3     120.0
+      note: contains samples that failed the plausibility gate
+    4     25.000     25.005  dropout  bridge    9.0       0.0     0.0                1       0.0
+
+run-repair 3 runs interpolated (11 quaternions)  1 too long  0 motion-like
+writes     430 quaternions in 108 samples
+residual   100.0% reduced in region  10.5% clip-wide
+verdict    patch
+suggests   --no-bridge

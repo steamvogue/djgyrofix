@@ -1,0 +1,9 @@
+clip       30.000 s  1500 samples  6000 quaternions @ 200.0 Hz  duplicates 0.0%
+baseline   0.6 dps  threshold 60.0 dps (rolling)
+noise      p10 0.6  p50 0.6  p90 0.6 dps  noisy 0.0% (0.00 s) at >= 45.0 dps
+events     0 found  0 actionable  0 near-miss  0.000 s affected (0.00%)
+
+run-repair 0 runs interpolated (0 quaternions)  0 too long  0 motion-like
+writes     0 quaternions in 0 samples
+verdict    clean
+suggests   (note)

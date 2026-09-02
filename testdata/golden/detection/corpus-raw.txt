@@ -1,0 +1,118 @@
+clip       497.263 s  29806 samples  993523 quaternions @ 1978.0 Hz  duplicates 50.0%
+baseline   3.4 dps  threshold 60.0 dps (rolling)
+noise      p10 2.6  p50 3.4  p90 4.3 dps  noisy 0.0% (0.00 s) at >= 45.0 dps
+events     93 found  81 actionable  1 near-miss  19.823 s affected (3.99%)
+
+    #      start        end  class    action    sev  peak_dps   ratio  axes      peaks window_ms
+    1      6.680      6.820  jitter   smooth    6.4     105.0    35.3  Y/X           2     120.0
+    2      9.580      9.730  jitter   smooth    8.5     168.3    53.2  X/Z           3     120.0
+    3     12.180     12.480  jitter   smooth   10.0     443.2   131.8  Z             8     150.0
+    4     15.680     15.820  motion   none      7.4     130.5    33.8  X             3       0.0
+      note: residual tracks intentional motion
+    5     16.450     16.530  motion   none      6.9     117.3    29.3  X             1       0.0
+      note: residual tracks intentional motion
+    6     18.330     18.520  jitter   smooth   10.0     288.6    66.2  Z             3     120.0
+    7     22.140     22.280  jitter   smooth   10.0     352.9    75.1  X             2     120.0
+    8     22.480     22.570  motion   none      7.5     133.2    28.2  Y             1       0.0
+      note: residual is along rotation axis (control input)
+    9     28.190     28.330  jitter   smooth   10.0     613.4   127.5  X/Z           3     120.0
+   10     30.140     30.260  motion   none      6.7     112.0    24.1  X             2       0.0
+      note: residual tracks intentional motion
+   11     30.520     30.660  motion   none      8.2     158.4    35.1  X             2       0.0
+      note: residual tracks intentional motion
+   12     31.720     32.080  jitter   smooth   10.0     496.4   112.6  X             6     180.0
+   13     32.410     32.490  motion   none      6.4     103.8    23.6  Y/X           2       0.0
+      note: residual tracks intentional motion
+   14     32.710     32.820  motion   none      7.7     142.0    32.4  Y/Z           2       0.0
+      note: residual tracks intentional motion
+   15     34.330     34.410  impact   smooth   10.0     264.2    60.2  X/Z           1     100.0
+   16     37.920     38.200  jitter   smooth   10.0     274.0    66.9  X             3     140.0
+   17     39.070     39.130  impact   smooth    5.1      76.9    18.8  X             1      90.0
+   18     40.710     41.000  jitter   smooth   10.0     392.6    92.6  Y/Z           6     145.0
+   19     45.810     46.120  jitter   smooth   10.0     539.3   146.0  Y/Z           4     155.0
+   20     51.930     52.290  jitter   smooth   10.0     506.8   177.1  Y/Z/X         7     180.0
+   21     70.380     71.100  jitter   smooth   10.0     274.0    88.7  Y             8     360.0
+   22     76.720     76.820  impact   smooth   10.0     640.5   165.9  Z             1     100.0
+   23     79.790     80.680  jitter   smooth   10.0     593.1   153.9  Z            14     400.0
+   24     83.250     83.400  jitter   smooth   10.0     282.4    75.3  Z/X           2     120.0
+   25     83.800     83.850  impact   smooth    7.1     122.8    32.4  X/Z           1      75.0
+   26     95.620     95.710  impact   smooth   10.0     389.0   101.8  X             1     100.0
+   27     99.650     99.740  impact   smooth   10.0     345.5    94.2  X             1     100.0
+   28     99.920     99.970  impact   smooth    8.3     163.2    44.8  X             1      75.0
+   29    101.590    101.820  motion   none      7.2     126.8    34.6  X             3       0.0
+      note: residual tracks intentional motion
+   30    104.370    104.710  motion   none      9.4     210.9    54.5  X             5       0.0
+      note: residual tracks intentional motion
+   31    106.960    107.050  jitter   smooth    8.3     163.9    43.3  Z/X           2     120.0
+   32    115.510    115.810  jitter   smooth   10.0     614.9   209.8  X/Z           4     150.0
+   33    133.680    133.850  jitter   smooth    9.3     204.0    68.6  Y/Z           2     120.0
+   34    150.420    150.490  motion   none      6.6     108.9    35.5  Y/X           1       0.0
+      note: residual tracks intentional motion
+   35    154.440    154.620  jitter   smooth   10.0     317.4    99.6  Z/X           2     120.0
+   36    160.780    160.970  jitter   smooth    9.8     231.4    73.3  Z             4     120.0
+   37    165.350    165.520  jitter   smooth   10.0     287.4    83.3  X             4     120.0
+   38    169.540    169.990  jitter   smooth   10.0     490.9   148.8  Y/X/Z         7     225.0
+   39    173.430    173.710  jitter   smooth   10.0     325.3    95.9  Z/Y/X         6     140.0
+   40    177.810    177.960  jitter   smooth   10.0     350.0   104.0  X/Z           3     120.0
+   41    192.800    193.020  jitter   smooth   10.0     398.2   106.0  X             3     120.0
+   42    197.490    197.660  jitter   smooth   10.0     382.0   101.7  X/Z           3     120.0
+   43    199.770    200.050  jitter   smooth   10.0     309.2    78.6  Z             6     140.0
+   44    202.130    202.300  jitter   smooth   10.0     503.8   130.6  X/Z           2     120.0
+   45    202.640    202.690  impact   smooth    6.3     102.9    26.6  X             1      75.0
+   46    205.370    205.420  impact   smooth    6.4     103.9    27.5  X             1      75.0
+   47    210.470    210.630  jitter   smooth   10.0     344.4   108.8  X/Y           3     120.0
+   48    224.360    224.530  jitter   smooth   10.0     395.8   123.9  Y/X           2     120.0
+   49    228.410    228.540  jitter   smooth    8.8     180.8    50.7  X             3     120.0
+   50    233.580    233.950  jitter   smooth   10.0     340.2    79.8  Y/Z           6     185.0
+   51    234.190    234.320  jitter   smooth   10.0     376.9    89.3  Z             2     120.0
+   52    236.800    237.230  jitter   smooth   10.0     535.0   128.4  X             6     215.0
+   53    242.500    242.730  jitter   smooth   10.0     464.7   111.0  Z/X/Y         5     120.0
+   54    246.980    247.370  jitter   smooth   10.0     889.0   198.3  X             6     195.0
+   55    250.250    250.560  jitter   smooth   10.0     435.9    86.5  Z/X           6     155.0
+   56    256.220    256.570  jitter   smooth   10.0     326.2    67.2  Y             7     175.0
+   57    257.110    257.460  jitter   smooth   10.0     949.3   196.4  Y/Z           5     175.0
+   58    260.410    260.660  jitter   smooth   10.0     392.2    87.4  X             2     125.0
+   59    262.160    262.360  jitter   smooth   10.0     283.3    65.8  X             4     120.0
+   60    262.710    262.870  jitter   smooth   10.0     326.0    79.0  Y/Z/X         4     120.0
+   61    272.560    272.920  jitter   smooth   10.0     418.2   108.0  X             4     180.0
+   62    276.620    276.950  jitter   smooth   10.0     486.4   129.2  X/Z           6     165.0
+   63    277.710    277.890  motion   none      8.3     161.7    41.8  Z             4       0.0
+      note: residual tracks intentional motion
+   64    278.130    279.230  jitter   smooth   10.0     500.9   129.2  Z/X/Y        16     400.0
+   65    282.900    283.200  jitter   smooth   10.0     531.1   129.2  Z             5     150.0
+   66    289.290    289.660  jitter   smooth   10.0     678.5   163.1  X/Z           4     185.0
+   67    289.830    290.030  jitter   smooth   10.0     323.5    78.8  Z/Y           4     120.0
+   68    293.450    293.760  jitter   smooth   10.0     494.0   126.5  X             6     155.0
+   69    306.670    306.900  jitter   smooth   10.0     294.2    77.0  X             5     120.0
+   70    311.210    311.360  jitter   smooth    9.3     203.4    52.5  Y             2     120.0
+   71    311.690    311.860  jitter   smooth   10.0     365.9    94.3  Y/Z/X         4     120.0
+   72    314.340    314.500  jitter   smooth   10.0     812.7   206.5  Z/Y/X         3     120.0
+   73    325.100    325.300  jitter   smooth    7.4     130.8    34.3  Y/X           2     120.0
+   74    331.950    332.450  jitter   smooth   10.0     367.5    90.9  X/Z           9     250.0
+   75    338.840    339.120  jitter   smooth   10.0     338.6    80.7  Y             5     140.0
+   76    351.390    351.630  jitter   smooth   10.0     310.7    73.3  Z             4     120.0
+   77    356.010    356.230  jitter   smooth    9.9     237.1    58.6  Z/X           3     120.0
+   78    356.680    356.850  jitter   smooth    9.9     237.0    59.0  Y             3     120.0
+   79    362.080    362.360  jitter   smooth    8.7     178.7    47.8  Z/X/Y         6     140.0
+   80    365.790    365.880  jitter   smooth   10.0     281.1    85.3  X/Y           2     120.0
+   81    416.120    416.220  jitter   smooth    9.1     196.6    61.4  Z/Y           2     120.0
+   82    421.050    421.390  jitter   smooth   10.0     357.4   105.4  Y/X           6     170.0
+   83    426.820    426.970  jitter   smooth   10.0     334.5   104.6  Y/X           3     120.0
+   84    428.260    428.490  jitter   smooth   10.0     462.0   146.9  Z/X           5     120.0
+   85    446.660    446.820  jitter   smooth   10.0     338.6   138.6  Y/X           4     120.0
+   86    450.050    450.450  jitter   smooth   10.0     348.1   139.2  Z             5     200.0
+   87    466.260    466.800  jitter   smooth   10.0     413.6   154.1  Z/X/Y         8     270.0
+   88    474.870    474.980  motion   none      5.6      86.2    26.6  Y/Z/X         2       0.0
+      note: residual tracks intentional motion
+   89    475.500    475.560  impact   smooth    6.8     114.5    35.1  X/Z           1      90.0
+   90    479.730    480.080  jitter   smooth   10.0     675.7   214.3  Z             7     175.0
+   91    484.520    484.750  jitter   smooth   10.0     240.9    79.9  Y/X/Z         4     120.0
+   92    485.030    485.090  impact   smooth    6.9     117.5    38.7  Y/Z           1      90.0
+   93    497.210    497.263  impact   smooth    8.8     182.1    72.0  Z             1      79.3
+
+run-repair 2421 runs interpolated (21933 quaternions)  10 too long  44 motion-like
+writes     39542 quaternions in 1385 samples
+residual   84.7% reduced in region  5.0% clip-wide
+verdict    patch
+suggests   --sensitivity 1.3
+warning    43 original correction region(s) remain detectable after 3 bounded pass(es)

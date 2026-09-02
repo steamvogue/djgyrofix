@@ -6,6 +6,17 @@ Notable changes to djgyrofix. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Detection changes now show up as a reviewable diff.** `TestDetectionGolden`
+  pins the event table — class, action, severity, peak rate, baseline ratio,
+  axes, peak count and derived window — alongside the noise profile, run-repair
+  counts, writes, residual scores and verdict, for eight synthetic defect
+  fixtures, four tuning variants and the real captures. Golden parity never
+  covered this: it drives `--ranges`, which skips detection entirely.
+  Regenerate with `go test ./cmd/djgyrofix -run TestDetectionGolden -update`
+  and read the diff. See DESIGN §9.5.
+
 ## [0.10.0] — 2026-09-02
 
 ### Changed

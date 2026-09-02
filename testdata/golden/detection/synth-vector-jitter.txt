@@ -1,0 +1,12 @@
+clip       30.000 s  1500 samples  6000 quaternions @ 200.0 Hz  duplicates 0.0%
+baseline   0.6 dps  threshold 60.0 dps (rolling)
+noise      p10 0.6  p50 0.6  p90 0.6 dps  noisy 0.0% (0.00 s) at >= 45.0 dps
+events     1 found  1 actionable  0 near-miss  0.410 s affected (1.37%)
+
+    #      start        end  class    action    sev  peak_dps   ratio  axes      peaks window_ms
+    1      7.990      8.400  jitter   smooth    8.7     177.1   302.7  X/Z           5     205.0
+
+run-repair 0 runs interpolated (0 quaternions)  3 too long  0 motion-like
+writes     144 quaternions in 37 samples
+residual   93.7% reduced in region  0.1% clip-wide
+verdict    patch
