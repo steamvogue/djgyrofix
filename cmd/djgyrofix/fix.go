@@ -50,6 +50,7 @@ Every applied patch writes a sidecar journal next to the video, so
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
+	opts.markExplicit(flags)
 	if err := opts.validateCommon(); err != nil {
 		return err
 	}

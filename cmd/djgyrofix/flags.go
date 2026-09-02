@@ -29,6 +29,7 @@ type options struct {
 
 	// Correction
 	repair           string
+	repairSet        bool
 	strength         float64
 	smoothingMS      float64
 	bridgeMaxSamples optionalInt
@@ -66,6 +67,20 @@ func (o *options) registerCorrection(flags *flag.FlagSet) {
 	flags.Var(&o.bridgeMaxSamples, "bridge-max-samples", "longest dropout run to SLERP-bridge (default 3)")
 	flags.BoolVar(&o.noBridge, "no-bridge", false, "disable reconstruction entirely")
 	flags.StringVar(&o.ranges, "ranges", "", `manual override, e.g. "12.5-14.0,61-62.25" (skips detection)`)
+}
+
+// markExplicit records which flags actually appeared on the command line.
+//
+// A default is otherwise indistinguishable from a deliberate choice, and that
+// distinction matters for --repair: manual-range mode cannot honour it, and
+// saying so is only worth the line when the caller asked for a mode rather
+// than inheriting the default.
+func (o *options) markExplicit(flags *flag.FlagSet) {
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "repair" {
+			o.repairSet = true
+		}
+	})
 }
 
 func (o *options) registerIO(flags *flag.FlagSet, forFix bool) {
@@ -162,8 +177,15 @@ func (o *options) validateCommon() error {
 	default:
 		return fmt.Errorf("unknown format %q (want text, json, edl or csv)", o.format)
 	}
+	// An empty value means "whatever the default is", the same courtesy the
+	// format flag extends. Resolve it here rather than downstream: the chosen
+	// mode is recorded in the journal, so leaving "" in place would write a
+	// provenance record that does not name the correction that ran.
+	if o.repair == "" {
+		o.repair = "runs"
+	}
 	switch o.repair {
-	case "", "blur", "runs":
+	case "blur", "runs":
 	default:
 		return fmt.Errorf("unknown repair mode %q (want blur or runs)", o.repair)
 	}

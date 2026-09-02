@@ -6,6 +6,22 @@ Notable changes to djgyrofix. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **`--ranges` silently ignored `--repair`.** Manual-range mode has always
+  corrected by blur — it is the path held to byte-for-byte parity with the
+  Python reference, which has no notion of run-repair — but it accepted
+  `--repair runs` and discarded it, and wrote a journal with no `repair` key at
+  all. Harmless while `blur` was the default and the two agreed; since 0.8.0 it
+  meant every manual-range fix quietly used a mode other than the documented
+  default. The mode that ran is now recorded in the journal, asking for the
+  other one warns, and `docs/USAGE.md` says so.
+- **An empty `--repair` was accepted and then misreported.** `--repair=""` is
+  taken as "use the default", as an empty `--format` already is, but the value
+  was carried into the journal verbatim while run-repair ran — a provenance
+  record that did not name the correction that produced the patch. It now
+  resolves to `runs` before anything reads it.
+
 ## [0.8.1] — 2026-09-02
 
 Documentation only; the binary is identical to 0.8.0.
@@ -43,7 +59,7 @@ Documentation only; the binary is identical to 0.8.0.
 
   This moves a real risk into the default path, so it is worth stating plainly:
   replacing a run interpolates orientation, and on a run that is genuinely rapid
-  motion rather than an excursion that would invent attitude the aircraft never
+  motion rather than an excursion, that invents attitude the aircraft never
   held. Three things bound it — runs over 30 ms are never replaced, a run is
   only replaced when its endpoints still match the surrounding trend, and
   selection uses the residual across the rotation axis so a rate change about

@@ -39,6 +39,7 @@ step on footage you care about.`,
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
+	opts.markExplicit(flags)
 	if err := opts.validateCommon(); err != nil {
 		return err
 	}

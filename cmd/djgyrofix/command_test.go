@@ -300,3 +300,54 @@ func TestJobsProcessesABatchInOrder(t *testing.T) {
 		t.Error("parallel scanning reordered the report; output must follow argument order")
 	}
 }
+
+// Manual ranges always correct by blur, whatever --repair says. That is
+// deliberate — it is the golden-parity path — so the journal has to name the
+// mode that ran, and a caller who asked for the other one has to be told.
+func TestRangesModeReportsTheBlurItActuallyRan(t *testing.T) {
+	intervals, err := parseRanges("8.0-9.5")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, testCase := range []struct {
+		name        string
+		repair      string
+		repairSet   bool
+		wantWarning bool
+	}{
+		{"default runs, not asked for", "runs", false, false},
+		{"runs asked for explicitly", "runs", true, true},
+		{"blur asked for explicitly", "blur", true, false},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			path := writeFixture(t, synth.DefectMixed)
+			opts := defaultOptions()
+			opts.ranges = "8.0-9.5"
+			opts.repair = testCase.repair
+			opts.repairSet = testCase.repairSet
+
+			result, err := analyze(path, opts, intervals)
+			if err != nil {
+				t.Fatalf("analyze: %v", err)
+			}
+			if got := result.params["repair"]; got != "blur" {
+				t.Errorf("journal records repair %v, want the blur that ran", got)
+			}
+			if result.report.Repair != nil {
+				t.Error("manual mode reported run-repair statistics it never gathered")
+			}
+
+			warned := false
+			for _, warning := range result.report.Warnings {
+				if strings.Contains(warning, "--repair") {
+					warned = true
+				}
+			}
+			if warned != testCase.wantWarning {
+				t.Errorf("warned = %v, want %v (warnings: %q)",
+					warned, testCase.wantWarning, result.report.Warnings)
+			}
+		})
+	}
+}

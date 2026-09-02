@@ -181,3 +181,57 @@ func TestVariantOverrideParsing(t *testing.T) {
 		t.Error("an unknown variant was accepted")
 	}
 }
+
+// An empty --repair must resolve to the shipped default rather than being
+// carried into the journal, which records the mode as provenance for the patch.
+func TestValidateCommonNormalizesEmptyRepair(t *testing.T) {
+	opts := defaultOptions()
+	opts.repair = ""
+	if err := opts.validateCommon(); err != nil {
+		t.Fatalf("empty repair mode was rejected: %v", err)
+	}
+	if opts.repair != "runs" {
+		t.Errorf("empty repair mode resolved to %q, want the default %q", opts.repair, "runs")
+	}
+
+	opts.repair = "blur"
+	if err := opts.validateCommon(); err != nil {
+		t.Fatalf("blur was rejected: %v", err)
+	}
+	if opts.repair != "blur" {
+		t.Errorf("an explicit mode was overwritten with %q", opts.repair)
+	}
+
+	opts.repair = "bogus"
+	if err := opts.validateCommon(); err == nil {
+		t.Error("an unknown repair mode was accepted")
+	}
+}
+
+// markExplicit has to separate "the user chose runs" from "runs is the
+// default", because only the former is worth warning about under --ranges.
+func TestMarkExplicitTracksRepair(t *testing.T) {
+	for _, testCase := range []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{"absent", []string{}, false},
+		{"explicit runs", []string{"--repair", "runs"}, true},
+		{"explicit blur", []string{"--repair=blur"}, true},
+		{"other flag only", []string{"--strength", "0.5"}, false},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			opts := &options{}
+			flags := flag.NewFlagSet("test", flag.ContinueOnError)
+			opts.registerCorrection(flags)
+			if err := flags.Parse(testCase.args); err != nil {
+				t.Fatal(err)
+			}
+			opts.markExplicit(flags)
+			if opts.repairSet != testCase.want {
+				t.Errorf("repairSet = %v, want %v", opts.repairSet, testCase.want)
+			}
+		})
+	}
+}

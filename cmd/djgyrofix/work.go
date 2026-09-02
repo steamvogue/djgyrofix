@@ -131,7 +131,7 @@ func analyzeAuto(source *pipeline.Source, opts *options, result *analysis) error
 	corrected, correctionPasses, postCorrection, discovered, correctionScopes, err := autoCorrect(points, detected, params, correct.EnvelopeOptions{
 		Strength:    opts.strength,
 		SmoothingMS: opts.smoothingMS,
-		RepairRuns:  opts.repair != "blur",
+		RepairRuns:  opts.repair == "runs",
 		Repair:      correct.DefaultRepairOptions(),
 		Stats:       repairStats,
 	}, opts.maxAffected)
@@ -149,7 +149,7 @@ func analyzeAuto(source *pipeline.Source, opts *options, result *analysis) error
 			result.report.AffectedFraction = result.report.AffectedSeconds / result.report.DurationSeconds
 		}
 	}
-	if opts.repair != "blur" {
+	if opts.repair == "runs" {
 		result.report.Repair = repairStats
 	}
 	result.params["repair"] = opts.repair
@@ -440,6 +440,16 @@ func eventsOverlap(a, b detect.Event, paddingSeconds float64) bool {
 // accumulation of already-patched samples so a later interval's context sees
 // the earlier interval's output.
 func analyzeRanges(source *pipeline.Source, opts *options, intervals []interval, result *analysis) error {
+	// Manual ranges are the legacy path, and deliberately so: it is the one
+	// held to byte-for-byte parity with the Python reference, which has no
+	// notion of run-repair. Run-repair is the default everywhere else, so a
+	// caller who names a mode here gets the blur regardless. Say that out loud
+	// rather than leave it to be inferred from a journal.
+	if opts.repairSet && opts.repair != "blur" {
+		result.report.Warnings = append(result.report.Warnings,
+			"--ranges always corrects by blur; --repair chooses a mode for detected events only")
+	}
+
 	smoothingMS := opts.smoothingMS
 	if smoothingMS <= 0 {
 		smoothingMS = correct.DefaultSmoothingMS
@@ -581,6 +591,7 @@ func analyzeRanges(source *pipeline.Source, opts *options, intervals []interval,
 	result.params = map[string]any{
 		"mode":         "ranges",
 		"ranges":       opts.ranges,
+		"repair":       "blur",
 		"smoothing_ms": smoothingMS,
 		"strength":     opts.strength,
 	}

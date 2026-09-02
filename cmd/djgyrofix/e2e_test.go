@@ -53,6 +53,7 @@ func defaultOptions() *options {
 	return &options{
 		profile:     "balanced",
 		sensitivity: 1.0,
+		repair:      "runs",
 		strength:    1.0,
 		backup:      "journal",
 		maxAffected: 0.15,

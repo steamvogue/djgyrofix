@@ -82,6 +82,12 @@ djgyrofix fix --apply --ranges 12.5-14.0,61-62.25 DJI_0042.MP4
 
 Times accept seconds (`22.5`) or clock form (`00:00:22.500`, `1:02.5`).
 
+`--ranges` always corrects by blur, whatever `--repair` says, and warns if you
+asked for the other mode. Run-repair picks its runs out of a detected event,
+and this path runs no detection: the window you named is the whole instruction.
+It is also the path held to byte-for-byte parity with the Python reference,
+which has no notion of run-repair.
+
 ## Recipes
 
 **Look before you leap.** `fix` without `--apply` reports exactly what it would
@@ -184,7 +190,7 @@ Accepted by `scan` and `fix`.
 | `--smoothing-ms` | auto | Override the per-event blur window. |
 | `--bridge-max-samples` | `3` | Longest dropout run that may be SLERP-bridged. |
 | `--no-bridge` | off | Never reconstruct a dropout. |
-| `--ranges` | — | Manual time ranges; skips detection entirely. |
+| `--ranges` | — | Manual time ranges; skips detection entirely, and always blurs. |
 
 ## Safety flags
 
