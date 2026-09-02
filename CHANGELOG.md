@@ -6,6 +6,29 @@ Notable changes to djgyrofix. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-09-02
+
+### Changed
+
+- **`--repair runs` is now the default.** Correcting an event means replacing
+  the samples inside it that are out of trend, rather than low-passing the whole
+  span. On the real clip that is 6,198 runs replaced while touching 91,241
+  quaternions, against 165,207 for the blur at the same detection settings — a
+  third fewer samples modified, and the genuine motion between the runs left
+  exactly as recorded.
+
+  `--repair blur` restores the previous behaviour exactly, and remains the path
+  held to byte-for-byte parity with the Python reference.
+
+  This moves a real risk into the default path, so it is worth stating plainly:
+  replacing a run interpolates orientation, and on a run that is genuinely rapid
+  motion rather than an excursion that would invent attitude the aircraft never
+  held. Three things bound it — runs over 30 ms are never replaced, a run is
+  only replaced when its endpoints still match the surrounding trend, and
+  selection uses the residual across the rotation axis so a rate change about
+  the axis already being turned is not mistaken for a wobble. It is still a
+  newer path than the blur, and `revert` is exact if it goes wrong.
+
 ## [0.7.1] — 2026-09-02
 
 Documentation only; the binary is identical to 0.7.0.
@@ -406,7 +429,8 @@ byte-for-byte output parity against it in manual-range mode.
 - Writing a full copy of the video for every edit. `--out` keeps that behaviour
   where it is wanted.
 
-[Unreleased]: https://github.com/steamvogue/djgyrofix/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/steamvogue/djgyrofix/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/steamvogue/djgyrofix/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/steamvogue/djgyrofix/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/steamvogue/djgyrofix/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/steamvogue/djgyrofix/compare/v0.5.1...v0.6.0

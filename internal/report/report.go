@@ -264,9 +264,11 @@ func writeTextOne(w *errWriter, report Report) {
 	}
 
 	if report.Repair != nil {
-		w.printf("\nrun-repair: replaced %d runs (%d quaternions); %d too long to interpolate, %d were real motion\n",
+		w.println()
+		writeWrapped(w, fmt.Sprintf(
+			"run-repair: replaced %d runs (%d quaternions); %d too long to interpolate, %d were real motion",
 			report.Repair.RunsReplaced, report.Repair.SamplesReplaced,
-			report.Repair.RunsTooLong, report.Repair.RunsRealMotion)
+			report.Repair.RunsTooLong, report.Repair.RunsRealMotion), "  ")
 	}
 
 	if report.Applied {

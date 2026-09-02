@@ -38,15 +38,16 @@ djgyrofix scan DJI_0042.MP4
 Two ways to correct a detected event, chosen with `--repair`.
 
 ```bash
-# blur (default) — low-pass the whole event
+# runs (default) — replace only the samples that are out of trend
 djgyrofix fix --apply DJI_0042.MP4
 
-# runs — replace only the samples that are out of trend
-djgyrofix fix --apply --repair runs DJI_0042.MP4
+# blur — low-pass the whole event, the behaviour before 0.8.0
+djgyrofix fix --apply --repair blur DJI_0042.MP4
 ```
 
-`blur` smooths everything inside a detected event. It is the older, better
-validated path, and it holds byte-for-byte parity with the Python reference.
+`blur` smooths everything inside a detected event. It was the default through
+0.7.x, and it is the path held to byte-for-byte parity with the Python
+reference.
 
 `runs` finds the supra-threshold runs *inside* an event and interpolates each
 along the arc between its neighbours, leaving every other sample untouched. It
@@ -61,7 +62,7 @@ moving is the artifact. On the real clip a 366 °/s exit rotation reads 29%
 across-axis where the wobble 400 ms later reads 92%, so this is what stops a
 repair cutting into an aggressive manoeuvre.
 
-It is opt-in, and it can fail in a way the blur cannot: these runs cluster on
+It can fail in a way the blur cannot: these runs cluster on
 sharp movements, where an interpolation is most likely to invent an orientation
 the aircraft never held. Two guards bound that. A run longer than 30 ms is never
 replaced, and a run is only replaced when its endpoints still match the
@@ -88,13 +89,13 @@ change and writes nothing:
 
 ```bash
 djgyrofix fix DJI_0042.MP4
-djgyrofix fix --repair runs DJI_0042.MP4
+djgyrofix fix --repair blur DJI_0042.MP4
 ```
 
 **Never touch the original.** Writes a patched copy and leaves the source alone:
 
 ```bash
-djgyrofix fix --apply --repair runs --out fixed.MP4 DJI_0042.MP4
+djgyrofix fix --apply --out fixed.MP4 DJI_0042.MP4
 ```
 
 **Detect more.** The absolute floor is the strongest knob; 60 is the default and
@@ -135,8 +136,8 @@ djgyrofix scan --format json DJI_0042.MP4 | jq '.noise'
 **Compare two settings side by side:**
 
 ```bash
-djgyrofix fix --apply --floor-dps 20 --out blur.MP4  DJI_0042.MP4
-djgyrofix fix --apply --floor-dps 20 --repair runs --out runs.MP4 DJI_0042.MP4
+djgyrofix fix --apply --floor-dps 20 --out runs.MP4 DJI_0042.MP4
+djgyrofix fix --apply --floor-dps 20 --repair blur --out blur.MP4 DJI_0042.MP4
 ```
 
 ## Undo
@@ -178,7 +179,7 @@ Accepted by `scan` and `fix`.
 
 | Flag | Default | What it does |
 |---|---|---|
-| `--repair` | `blur` | `blur` or `runs`. See [Correction modes](#correction-modes). |
+| `--repair` | `runs` | `runs` or `blur`. See [Correction modes](#correction-modes). |
 | `--strength` | `1.0` | Global multiplier on the correction weight, 0–1. Zero is a no-op. |
 | `--smoothing-ms` | auto | Override the per-event blur window. |
 | `--bridge-max-samples` | `3` | Longest dropout run that may be SLERP-bridged. |
@@ -215,12 +216,12 @@ Work down this ladder. Each step is a real thing to try, in the order that pays
 off, and the last two are the honest answer when the metadata is not the
 problem.
 
-**1. Switch correction mode.** The blur smooths a whole event; run-repair
-replaces only the samples that are out of trend and leaves the manoeuvre around
-them alone.
+**1. Switch correction mode.** Run-repair is the default and replaces only the
+samples that are out of trend; the blur smooths a whole event. If a repair looks
+worse, try the other one — they fail differently.
 
 ```bash
-djgyrofix fix --apply --force --repair runs DJI_0042.MP4
+djgyrofix fix --apply --force --repair blur DJI_0042.MP4
 ```
 
 **2. Lower the floor.** This is the strongest knob in the tool. The default of
@@ -228,7 +229,7 @@ djgyrofix fix --apply --force --repair runs DJI_0042.MP4
 footage sits near 3 °/s.
 
 ```bash
-djgyrofix fix --apply --force --repair runs --floor-dps 20 DJI_0042.MP4
+djgyrofix fix --apply --force --floor-dps 20 DJI_0042.MP4
 ```
 
 Below about 10 the false positives start: on a clip known to be good, 15 still
@@ -261,8 +262,8 @@ so the workflow that matters is producing candidates and comparing them. `--out`
 never touches the original, so you can make as many as you like:
 
 ```bash
-djgyrofix fix --apply --floor-dps 20 --out A_blur.MP4  DJI_0042.MP4
-djgyrofix fix --apply --floor-dps 20 --repair runs --out B_runs.MP4 DJI_0042.MP4
+djgyrofix fix --apply --floor-dps 20 --out A_runs.MP4 DJI_0042.MP4
+djgyrofix fix --apply --floor-dps 20 --repair blur --out B_blur.MP4 DJI_0042.MP4
 djgyrofix fix --apply --profile aggressive --floor-dps 20 --out C_aggr.MP4 DJI_0042.MP4
 ```
 
@@ -270,7 +271,7 @@ Then stabilize all three and watch the same manoeuvre in each. Read the
 predicted numbers as a hint, not a verdict:
 
 ```bash
-djgyrofix fix --repair runs --floor-dps 20 --format json DJI_0042.MP4 \
+djgyrofix fix --floor-dps 20 --format json DJI_0042.MP4 \
   | jq '{clip: (1 - .clip_score_after/.clip_score_before), region: (1 - .score_after/.score_before), repair}'
 ```
 
@@ -325,7 +326,7 @@ Feature availability:
 |---|---|
 | `--auto` | 0.3.0 |
 | `--style` | 0.4.0 |
-| `--repair runs` | 0.6.0 |
+| `--repair runs` | 0.6.0 (opt-in), 0.8.0 (default) |
 | across-axis run selection | 0.7.0 |
 
 ## Exit codes

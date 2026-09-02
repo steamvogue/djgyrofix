@@ -60,7 +60,7 @@ func (o *options) registerDetection(flags *flag.FlagSet) {
 }
 
 func (o *options) registerCorrection(flags *flag.FlagSet) {
-	flags.StringVar(&o.repair, "repair", "blur", "how to correct a detected event: blur | runs")
+	flags.StringVar(&o.repair, "repair", "runs", "how to correct a detected event: runs | blur")
 	flags.Float64Var(&o.strength, "strength", 1.0, "global multiplier on the correction weight, 0-1")
 	flags.Float64Var(&o.smoothingMS, "smoothing-ms", 0, "override the per-event window derivation (default: auto)")
 	flags.Var(&o.bridgeMaxSamples, "bridge-max-samples", "longest dropout run to SLERP-bridge (default 3)")

@@ -129,8 +129,8 @@ djgyrofix fix --apply --force --floor-dps 20 DJI_0042.MP4
 # Let it pick settings, and refuse footage it can't help
 djgyrofix fix --auto --apply DJI_0042.MP4
 
-# Replace only the bad samples instead of smoothing around them (newer, opt-in)
-djgyrofix fix --apply --repair runs DJI_0042.MP4
+# Smooth the whole event instead of replacing the bad samples (pre-0.8.0 behaviour)
+djgyrofix fix --apply --repair blur DJI_0042.MP4
 
 # A whole session
 djgyrofix scan --format csv DJI_*.MP4 > events.csv

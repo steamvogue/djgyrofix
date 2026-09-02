@@ -131,7 +131,7 @@ func analyzeAuto(source *pipeline.Source, opts *options, result *analysis) error
 	corrected, correctionPasses, postCorrection, discovered, correctionScopes, err := autoCorrect(points, detected, params, correct.EnvelopeOptions{
 		Strength:    opts.strength,
 		SmoothingMS: opts.smoothingMS,
-		RepairRuns:  opts.repair == "runs",
+		RepairRuns:  opts.repair != "blur",
 		Repair:      correct.DefaultRepairOptions(),
 		Stats:       repairStats,
 	}, opts.maxAffected)
@@ -149,7 +149,7 @@ func analyzeAuto(source *pipeline.Source, opts *options, result *analysis) error
 			result.report.AffectedFraction = result.report.AffectedSeconds / result.report.DurationSeconds
 		}
 	}
-	if opts.repair == "runs" {
+	if opts.repair != "blur" {
 		result.report.Repair = repairStats
 	}
 	result.params["repair"] = opts.repair
