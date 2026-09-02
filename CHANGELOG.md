@@ -21,6 +21,15 @@ Notable changes to djgyrofix. The format follows
 
 ### Added
 
+- **Corpus scoring, ready before the footage.** `TestCorpusLabelFiles` reads
+  reviewer labels from `testdata/corpus/<clip>.labels.csv` and reports precision
+  and recall per profile, so a clip can be scored the day it arrives; label files
+  are syntax-checked wherever the tests run, CI included, and scored only where
+  the clip is present. Precision counts only labelled ground, and `unsure` is
+  never folded into a ratio. `TestSyntheticCorpusScores` runs the same scorer
+  against labels derived from the constants `synth` injects artifacts at, which
+  states the whip-pan invariant in the terms DESIGN §13.4 will use. Intake and
+  format: `testdata/corpus/README.md`, DESIGN §9.6.
 - **Detection changes now show up as a reviewable diff.** `TestDetectionGolden`
   pins the event table — class, action, severity, peak rate, baseline ratio,
   axes, peak count and derived window — alongside the noise profile, run-repair

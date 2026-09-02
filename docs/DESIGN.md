@@ -528,6 +528,31 @@ cannot referee a detection change: it is measured with the same detector whose
 definition of residual just moved, so the target and the ruler shift together.
 That is why the tables record the event set itself and not only the score.
 
+### 9.6 Labelled corpus scoring
+
+§9.5 pins what detection decides; it cannot say whether deciding it was right.
+§13.4 wants that answered by scoring against clips a human has judged, weighting
+false positives above misses.
+
+`TestCorpusLabelFiles` is the scoring half, built ahead of the footage. Reviewer
+labels live in `testdata/corpus/<clip>.labels.csv` as `start,end,verdict` rows
+with verdict `artifact`, `motion` or `unsure`; the intake procedure and the
+format are in `testdata/corpus/README.md`. Label files are syntax-checked
+wherever the tests run, CI included, and scored only where the clip is present.
+
+Two decisions are worth stating. Precision and recall are computed over labelled
+ground only — an actionable event overlapping no label is reported separately
+rather than counted against precision, because a reviewer labels what they
+review and treating the remainder as either correct or incorrect would be an
+invention. And `unsure` is counted but never scored, since folding an undecided
+judgement into a ratio makes the number look more certain than the review behind
+it.
+
+`TestSyntheticCorpusScores` runs the same scorer against labels derived from the
+constants `synth` injects its artifacts at, which is ground truth by
+construction. That exercises the scoring path today and states §9.4's whip-pan
+invariant in the terms §13.4 will use: no profile may act on it.
+
 ---
 
 ## 10. Gyroflow integration
