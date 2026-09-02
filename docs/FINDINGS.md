@@ -314,6 +314,113 @@ detection and correction scope; a stabilized visual comparison still needs to
 be watched before tagging because no numerical gyro metric substitutes for the
 rendered result.
 
+## Why the residual warning cannot reach zero
+
+A patched run of the 497 s clip ends on `43 original correction region(s) remain
+detectable after 3 bounded pass(es)`. That reads as unfinished work. It is not.
+Raising the cap from one pass to eight, everything else held at the defaults:
+
+| passes | regions left | quaternions written | in-region | clip-wide | severity ≥ 9 |
+|---|---|---|---|---|---|
+| 1 | 59 | 132,952 | 75.3% | 4.4% | 36 |
+| 2 | 49 | 147,043 | 82.8% | 4.8% | 21 |
+| **3** | **43** | **158,153** | **84.7%** | **5.0%** | **14** |
+| 4 | 39 | 167,146 | 85.5% | 5.1% | 12 |
+| 5 | 34 | 175,938 | 86.8% | 5.1% | 11 |
+| 6 | 30 | 180,743 | 87.0% | 5.2% | 10 |
+| 7 | 29 | 180,968 | 87.1% | 5.3% | 6 |
+| 8 | 28 | 183,188 | 87.3% | 5.2% | 6 |
+
+The count falls monotonically and never oscillates, so the cap is not hiding an
+unstable loop. It also never reaches zero. Three passes reach 84.7% of an
+achievable 87.3%, which is 97% of the ceiling; passes four through eight rewrite
+16% more of the file to buy 2.6 further percentage points in region and 0.2
+clip-wide, the latter inside the noise — it drops again at eight. No pass
+discovers a new event and the affected span stays at 19.823 s throughout, so the
+extra work is entirely additional correction inside the regions already chosen.
+Three is where the curve flattens, and it stays.
+
+The interesting part is that the count keeps falling long after the measurement
+it is supposed to stand in for has stopped moving. Between three passes and
+eight, the region count improves by 35% while in-region residual improves by
+three points. The count is not tracking correction quality.
+
+Nor does it track severity. Splitting the 81 corrected regions at the shipped
+cap by whether they still trip detection afterwards:
+
+| outcome | n | median severity | median peak | median duration |
+|---|---|---|---|---|
+| still detectable | 43 | 10.0 | 309.2 °/s | 0.200 s |
+| cleared | 38 | 10.0 | 398.2 °/s | 0.200 s |
+
+The regions that *cleared* were the harder ones by peak rate. Whether a region
+falls below the detector afterwards is close to uncorrelated with how bad it was
+to begin with.
+
+The surviving residual is not a windowing artifact either. Locating each
+residual peak within the region it was aimed at puts 19 in the outer quarters
+and 21 in the middle half — equal widths, so effectively uniform — with 3
+outside. A longer window has nothing specific to reach for. Those regions had
+their peak rate cut by a median 35% and remained above threshold anyway, which
+is what a bounded correction aimed at a genuinely large transient looks like.
+
+**Consequence for the advice.** `--sensitivity 1.3` is currently suggested
+whenever any region remains detectable. On this clip that condition is true at
+every cap tested, so the tool recommends correcting harder off a number that
+more correction demonstrably does not fix in any way the residual metric
+registers. The 0.10.0 report already refuses to treat the warning as a failure
+and asks for a Gyroflow preview first. The measurement above says the trigger
+itself should move: gate the suggestion on in-region improvement, the way the
+`--smoothing-ms` suggestion already is, and report the warning as a bounded
+ceiling reached rather than as a count of defects outstanding.
+
+## Gyroflow's glitch filtering, and where it does not overlap
+
+Gyroflow added glitch filtering in [`7ac9d110`][gyroflow-glitch] (12 July 2026,
+credited in-comment to Gene Matocha), exposed as a strength slider. Its
+algorithm is close enough to this one to be worth stating: a high-pass residual
+against a short local trend, samples flagged above a multiple of the file's own
+baseline, each flagged core grown outward through its ringdown tail, the bad
+span bridged by SLERP between the last good and first good sample, repeated for
+a couple of passes so anomalies masked by larger ones surface. That is the same
+shape as §5 and §6 here, arrived at independently, which is reassuring about the
+shape.
+
+The strength slider maps onto three parameters: an absolute floor of 618 °/s at
+0%, 195 at 50% and 62 at 100%; a maximum region duration of 0.75 s, 1.5 s and
+2.25 s; and 1, 2 or 4 passes.
+
+On `DJI_20260705_RAW.MP4` it changes little, and the reason is structural rather
+than a matter of tuning.
+
+**It bridges, and this clip has nothing to bridge.** Its model is a short burst
+of *corrupt* attitude data, replaced by the smooth path the camera would have
+taken. This clip contains 93 events: 81 smoothing, 12 rejected as intentional
+motion, and **no dropouts and no plausibility-gate failures at all**. Nothing in
+it is corrupt. It is valid orientation carrying an excessive transient response,
+which wants attenuating rather than replacing — SLERP-replacing a median 0.200 s
+jitter burst would erase the real motion inside it, which is the case the 30 ms
+run cap and the endpoint-match guard of §6 exist to refuse.
+
+**Its threshold is file-global, on a clip whose artifacts help set it.** Flagging
+at a multiple of the file's own 99th-percentile residual assumes the artifacts
+are rare enough not to define that percentile. Here 4% of the clip is affected
+across 81 actionable events in 497 s, so they are a substantial part of the tail
+that sets their own bar. The rolling baseline of §5.2 exists for exactly this,
+and the absolute floor is not what rejects them: event peaks run p50 339, p90
+539, p99 889 °/s, so the default 195 °/s floor admits 67 of the 81 on its own.
+The maximum-duration guard is not binding either — the longest actionable event
+is 1.100 s against a 1.5 s default.
+
+The two tools therefore address adjacent halves of the same problem. Gyroflow
+now repairs corrupt-sample bursts at stabilization time, which is the better
+place to do it when that is the defect. This tool repairs the same bursts in the
+metadata, and additionally covers the sustained-transient case that a
+bridge-only model does not describe. Neither result has been checked against the
+other's own test material, and the comparison above rests on one clip.
+
+[gyroflow-glitch]: https://github.com/gyroflow/gyroflow/commit/7ac9d110
+
 ## Scope of the evidence
 
 This is two real clips plus generated fixtures designed to isolate clean

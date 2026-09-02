@@ -233,6 +233,30 @@ If you want a GUI, or you are on Windows or macOS and would rather not touch a
 terminal, [use Minsu Kim's tool][upstream] — it is signed, notarized, and does
 the same core job.
 
+## Gyroflow has glitch filtering now — do you still need this?
+
+Sometimes not. Gyroflow's nightly builds added a glitch filter with a strength
+slider, and its approach is close to this one: flag samples whose rate departs
+from the local trend, grow each flag through its ringdown, then replace the span
+with the smooth path. If your footage has short bursts of genuinely **corrupt**
+attitude data, try that first — it is one slider inside a tool you already have
+open, and repairing at stabilization time beats patching a file.
+
+The two do not cover the same ground, though. Gyroflow's filter replaces what it
+flags, so it addresses corruption. A large share of what breaks DJI stabilization
+is not corrupt at all: the orientation samples are valid, and merely carry an
+overshoot from frame vibration. Replacing a 200 ms burst of that erases the real
+motion inside it, so this tool attenuates those and reconstructs only genuine
+dropouts. It also thresholds against a rolling local baseline rather than a
+whole-file statistic, which matters once artifacts are frequent enough to raise
+their own bar.
+
+On the clip this tool was built for, Gyroflow's filter changes little: 93
+detected events, none of them corrupt, so there is nothing for a bridge to
+repair. That is one clip, and the comparison is
+[written up with the numbers](docs/FINDINGS.md). If Gyroflow's slider fixes your
+footage, use it and skip this entirely.
+
 ## How honest is this?
 
 The tool is validated against two real DJI clips and a set of generated
@@ -249,6 +273,14 @@ eventually guess wrong on some camera; sub-sample timing is interpolated because
 no per-quaternion timestamp is known in the DJI schema; and the diagnosis rests
 on a small number of real measurements, so if it calls your footage an airframe
 problem and you disagree, that's worth an issue.
+
+One report line deserves its own warning. `N region(s) remain detectable after
+3 bounded pass(es)` counts regions still above the detector, **not** defects
+left in your video. Measured on the reference clip, that count keeps falling as
+correction is repeated long after the residual it stands for has stopped
+improving, and the regions that clear are not the milder ones. Treat it as a
+note that correction reached its bounded ceiling, preview the result, and stop
+if it looks right.
 
 [reddit]: https://www.reddit.com/r/fpv/comments/1mzkd7v/dji_o4_lite_unwatchable_gyroflow_footage_heavy/
 [oscar]: https://oscarliang.com/dji-o4-pro-gyro-stabilization-issue/
