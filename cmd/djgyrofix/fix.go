@@ -153,17 +153,20 @@ func fixOne(path string, opts *options, intervals []interval) (report.Report, er
 	}
 
 	if !opts.apply {
+		finalizeReport(&result.report, opts, "fix")
 		return result.report, nil
 	}
 	if len(result.writes) == 0 {
 		// Nothing to undo means nothing to record. Writing a journal here
 		// would make the file look patched to the idempotency guard.
+		finalizeReport(&result.report, opts, "fix")
 		return result.report, nil
 	}
 	if err := applyPatch(path, journalPath, opts, result); err != nil {
 		return report.Report{}, fmt.Errorf("%s: %w", path, err)
 	}
 	result.report.Applied = true
+	finalizeReport(&result.report, opts, "fix")
 	return result.report, nil
 }
 

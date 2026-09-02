@@ -21,6 +21,10 @@ import (
 
 // Report is everything one file's scan or fix produced.
 type Report struct {
+	// Operation names the user-facing command that produced this report. It is
+	// set by the CLI after analysis, which is shared by scan and fix.
+	Operation string `json:"operation,omitempty"`
+
 	File            string `json:"file"`
 	Variant         string `json:"variant"`
 	VariantDetected string `json:"variant_detected"`
@@ -263,12 +267,28 @@ func writeTextOne(w *errWriter, report Report) {
 			report.AffectedSeconds, report.AffectedFraction*100)
 	}
 
-	if report.Repair != nil {
+	smoothingEvents := actionCount(report.Events, detect.ActionSmooth)
+	if report.Repair != nil && (report.Repair.RunsReplaced > 0 ||
+		report.Repair.RunsTooLong > 0 || report.Repair.RunsRealMotion > 0 || smoothingEvents > 0) {
 		w.println()
-		writeWrapped(w, fmt.Sprintf(
-			"run-repair: replaced %d runs (%d quaternions); %d too long to interpolate, %d were real motion",
-			report.Repair.RunsReplaced, report.Repair.SamplesReplaced,
-			report.Repair.RunsTooLong, report.Repair.RunsRealMotion), "  ")
+		if report.Repair.RunsReplaced > 0 {
+			writeWrapped(w, fmt.Sprintf(
+				"run-repair: interpolated %d short artifact run%s (%d quaternions)",
+				report.Repair.RunsReplaced, plural(report.Repair.RunsReplaced),
+				report.Repair.SamplesReplaced), "  ")
+		} else {
+			writeWrapped(w, "run-repair: no short artifact runs qualified for interpolation", "  ")
+		}
+		if report.Repair.RunsTooLong > 0 || report.Repair.RunsRealMotion > 0 {
+			writeWrapped(w, fmt.Sprintf(
+				"  skipped interpolation for %d long run%s and %d motion-like run%s; their events used bounded smoothing instead",
+				report.Repair.RunsTooLong, plural(report.Repair.RunsTooLong),
+				report.Repair.RunsRealMotion, plural(report.Repair.RunsRealMotion)), "  ")
+		} else if report.Repair.RunsReplaced == 0 && smoothingEvents > 0 {
+			writeWrapped(w, fmt.Sprintf(
+				"  bounded smoothing handled the %d detected event%s instead",
+				smoothingEvents, plural(smoothingEvents)), "  ")
+		}
 	}
 
 	if report.Applied {
@@ -284,8 +304,10 @@ func writeTextOne(w *errWriter, report Report) {
 			w.printf("backup:  %s\n", report.BackupPath)
 		}
 		if report.ScoreBefore > 0 {
-			w.printf("transient residual reduced %.1f%% clip-wide, %.1f%% inside the corrected regions\n",
-				report.ClipImprovementPercent(), report.ImprovementPercent())
+			writeWrapped(w, fmt.Sprintf(
+				"result: transient residual reduced %.1f%% clip-wide, %.1f%% inside the corrected regions",
+				report.ClipImprovementPercent(), report.ImprovementPercent()), "  ")
+			writeScoreMeaning(w, report)
 		}
 	} else if report.DryRun && report.Writes > 0 {
 		// Reached from `scan` as well as from a `fix` dry run, so the
@@ -303,8 +325,9 @@ func writeTextOne(w *errWriter, report Report) {
 	writeAdvice(w, report)
 
 	for _, warning := range report.Warnings {
-		w.printf("warning: %s\n", warning)
+		writeWrapped(w, "warning: "+warning, "  ")
 	}
+	writeNextSteps(w, report)
 }
 
 // writeAdvice renders the diagnosis block: the verdict, the measurements behind
@@ -339,17 +362,156 @@ func writeAdvice(w *errWriter, report Report) {
 	// and it needs no invitation to run the command it just ran.
 	if advice.Prediction != "" && !report.Applied {
 		writeWrapped(w, "  "+advice.Prediction, "  ")
+		writeScoreMeaning(w, report)
 	}
 	for _, suggestion := range advice.Suggestions {
-		if suggestion.Flags == advise.NoFlag {
-			writeWrapped(w, "  note: "+suggestion.Why, "        ")
+		if suggestion.Flags != advise.NoFlag {
 			continue
 		}
-		writeWrapped(w, "  try "+suggestion.Flags+" — "+suggestion.Why, "      ")
+		writeWrapped(w, "  note: "+suggestion.Why, "        ")
 	}
-	if advice.NextCommand != "" && !report.Applied {
-		w.printf("  next: %s\n", advice.NextCommand)
+}
+
+// writeScoreMeaning explains why the two honest measurements can look so
+// different. Without this line, a strong in-region correction beside a small
+// clip-wide number reads like a contradiction even though most of the clip was
+// deliberately left alone.
+func writeScoreMeaning(w *errWriter, report Report) {
+	outside := math.Max(0, 1-report.AffectedFraction) * 100
+	writeWrapped(w, fmt.Sprintf(
+		"  read the in-region figure as the result where correction was aimed; the clip-wide figure also includes the %s of footage outside the correction regions",
+		percent(outside)), "  ")
+}
+
+// writeNextSteps turns parameter hints into a workflow. A detector count is
+// not a visual quality metric, so the report always asks for a Gyroflow check
+// before it recommends stronger correction. When a retry is justified, the
+// command includes the current settings and the safe undo step.
+func writeNextSteps(w *errWriter, report Report) {
+	if report.Advice == nil {
+		return
 	}
+	advice := report.Advice
+	var alternatives, retries []advise.Suggestion
+	for _, suggestion := range advice.Suggestions {
+		if suggestion.Flags == advise.NoFlag {
+			continue
+		}
+		if !report.Applied && suggestion.Command == "" {
+			// Analysis can be used as a library without the CLI command context.
+			// Never print an instruction with no action beneath it.
+			continue
+		}
+		if isPreApplyAlternative(suggestion.Flags) {
+			alternatives = append(alternatives, suggestion)
+		} else {
+			retries = append(retries, suggestion)
+		}
+	}
+
+	if advice.Verdict != advise.VerdictPatch {
+		writeAlternativeSteps(w, append(alternatives, retries...))
+		return
+	}
+
+	w.println("next:")
+	step := 1
+	if !report.Applied && advice.NextCommand != "" {
+		writeWrapped(w, fmt.Sprintf("  %d. Apply the planned correction:", step), "     ")
+		w.printf("     %s\n", advice.NextCommand)
+		for _, suggestion := range alternatives {
+			writeWrapped(w, fmt.Sprintf("     If %s, use %s instead — %s:",
+				suggestion.When, suggestion.Flags, sentence(suggestion.Why)), "       ")
+			w.printf("       %s\n", suggestion.Command)
+		}
+		step++
+	}
+
+	preview := advice.PreviewFile
+	if preview == "" {
+		preview = report.OutputPath
+	}
+	if preview == "" {
+		preview = report.File
+	}
+	writeWrapped(w, fmt.Sprintf("  %d. Preview %s in Gyroflow at the listed times.", step, preview), "     ")
+	previewResult := "     If stabilization is smooth, stop"
+	if hasSuggestion(retries, "--sensitivity 1.3") {
+		previewResult += "; a residual warning alone does not mean the repair failed"
+	} else {
+		previewResult += " — you are done"
+	}
+	writeWrapped(w, previewResult+".", "     ")
+	step++
+
+	if report.Applied {
+		retries = append(alternatives, retries...)
+	}
+	for _, suggestion := range retries {
+		condition := suggestion.When
+		if condition == "" {
+			condition = "the listed measurement matches what you see"
+		}
+		writeWrapped(w, fmt.Sprintf("  %d. Only if %s: retry with %s. %s.",
+			step, condition, suggestion.Flags, sentence(suggestion.Why)), "     ")
+		if advice.RevertCommand != "" {
+			w.printf("     %s\n", advice.RevertCommand)
+		}
+		if advice.RevertCommand == "" && preview != report.File && suggestion.Command != "" {
+			writeWrapped(w, fmt.Sprintf(
+				"     This regenerates %s from the untouched source; --force replaces only that derived copy.",
+				preview), "     ")
+		}
+		if suggestion.Command != "" {
+			w.printf("     %s\n", suggestion.Command)
+		} else if report.Applied {
+			writeWrapped(w, "     Start again from an untouched original; this patch has no journal to undo.", "     ")
+		}
+		step++
+	}
+}
+
+func isPreApplyAlternative(flags string) bool {
+	return flags == "--no-bridge" || flags == "--profile conservative"
+}
+
+func writeAlternativeSteps(w *errWriter, suggestions []advise.Suggestion) {
+	if len(suggestions) == 0 {
+		return
+	}
+	w.println("next:")
+	for index, suggestion := range suggestions {
+		condition := suggestion.When
+		if condition == "" {
+			condition = "you choose this trade-off after reviewing the event list"
+		}
+		writeWrapped(w, fmt.Sprintf("  %d. If %s, test %s — %s.",
+			index+1, condition, suggestion.Flags, sentence(suggestion.Why)), "     ")
+		if suggestion.Command != "" {
+			w.printf("     %s\n", suggestion.Command)
+		}
+	}
+}
+
+func hasSuggestion(suggestions []advise.Suggestion, flags string) bool {
+	for _, suggestion := range suggestions {
+		if suggestion.Flags == flags {
+			return true
+		}
+	}
+	return false
+}
+
+func sentence(text string) string {
+	return strings.TrimSuffix(strings.TrimSpace(text), ".")
+}
+
+func percent(value float64) string {
+	precision := 1
+	if value > 99.9 && value < 100 {
+		precision = 2
+	}
+	return strconv.FormatFloat(value, 'f', precision, 64) + "%"
 }
 
 // writeWrapped emits one logical line, folded at adviceWidth with the given
@@ -512,6 +674,16 @@ func plural(count int) string {
 		return ""
 	}
 	return "s"
+}
+
+func actionCount(events []detect.Event, action detect.Action) int {
+	count := 0
+	for _, event := range events {
+		if event.Action == action {
+			count++
+		}
+	}
+	return count
 }
 
 // Ranges renders the events as a --ranges argument, so a scan report can be

@@ -8,6 +8,21 @@ Notable changes to djgyrofix. The format follows
 
 ### Changed
 
+- **Text reports now end with a decision, not a loose collection of flags.** A
+  patchable scan or dry run gives the apply command, asks the user to preview
+  the listed times in Gyroflow, explicitly says to stop when stabilization is
+  smooth, and only recommends a stronger retry when the visible result matches
+  the measured warning. In-place retries include the revert command; `--out`
+  retries replace only the derived copy; a no-journal patch is never told to
+  compound correction on the modified source.
+- Suggested commands preserve the scan's detection and correction settings and
+  replace only the flag being recommended. JSON advice now also carries each
+  suggestion's condition and exact command, the preview target, the safe revert
+  command when one exists, and the report's originating operation.
+- Residual-reduction figures now explain why a strong in-region result can sit
+  beside a small clip-wide number. Run-repair output distinguishes interpolation
+  from the bounded smoothing used for long and motion-like runs, instead of
+  implying that every non-interpolated run was simply left untouched.
 - **Release publishing now waits for the complete CI matrix.** The tag workflow
   calls the same reusable workflow as normal CI, covering tests and race tests
   on Linux, macOS and Windows, lint, all six cross-builds, parser fuzzing and

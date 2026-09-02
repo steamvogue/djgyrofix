@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/steamvogue/djgyrofix/internal/patch"
+	"github.com/steamvogue/djgyrofix/internal/report"
 	"github.com/steamvogue/djgyrofix/internal/synth"
 )
 
@@ -45,7 +47,7 @@ func TestScanCommandReportsWithoutWriting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("scan: %v", err)
 	}
-	for _, want := range []string{"wm169", "jitter", "dropout"} {
+	for _, want := range []string{"wm169", "jitter", "dropout", "Apply the planned correction", "Preview", "--no-bridge"} {
 		if !strings.Contains(output, want) {
 			t.Errorf("scan output is missing %q\n%s", want, output)
 		}
@@ -55,6 +57,35 @@ func TestScanCommandReportsWithoutWriting(t *testing.T) {
 	}
 	if _, err := os.Stat(patch.JournalPath(path)); !os.IsNotExist(err) {
 		t.Error("scan wrote a journal")
+	}
+}
+
+func TestScanJSONCarriesTheActionableWorkflow(t *testing.T) {
+	path := writeFixture(t, synth.DefectMixed)
+	output, err := captureStdout(t, func() error {
+		return runScan([]string{"--format", "json", path})
+	})
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	var decoded report.Report
+	if err := json.Unmarshal([]byte(output), &decoded); err != nil {
+		t.Fatalf("decode scan report: %v", err)
+	}
+	if decoded.Operation != "scan" || decoded.Advice == nil {
+		t.Fatalf("scan lost its operation or advice: %+v", decoded)
+	}
+	if !strings.Contains(decoded.Advice.NextCommand, "djgyrofix fix --apply") {
+		t.Errorf("scan JSON has no apply command: %+v", decoded.Advice)
+	}
+	foundCommand := false
+	for _, suggestion := range decoded.Advice.Suggestions {
+		if suggestion.Flags == "--no-bridge" && suggestion.When != "" && suggestion.Command != "" {
+			foundCommand = true
+		}
+	}
+	if !foundCommand {
+		t.Errorf("scan JSON has no scoped --no-bridge alternative: %+v", decoded.Advice.Suggestions)
 	}
 }
 
@@ -142,8 +173,14 @@ func TestFixCommandAppliesAndRevertRestores(t *testing.T) {
 	path := writeFixture(t, synth.DefectMixed)
 	before := readFile(t, path)
 
-	if _, err := captureStdout(t, func() error { return runFix([]string{"--apply", path}) }); err != nil {
+	output, err := captureStdout(t, func() error { return runFix([]string{"--apply", path}) })
+	if err != nil {
 		t.Fatalf("fix: %v", err)
+	}
+	for _, want := range []string{"Preview", "djgyrofix revert"} {
+		if !strings.Contains(output, want) {
+			t.Errorf("applied report is missing %q:\n%s", want, output)
+		}
 	}
 	if bytes.Equal(readFile(t, path), before) {
 		t.Fatal("fix --apply changed nothing")

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/steamvogue/djgyrofix/internal/advise"
+	"github.com/steamvogue/djgyrofix/internal/correct"
 	"github.com/steamvogue/djgyrofix/internal/detect"
 	"github.com/steamvogue/djgyrofix/internal/report"
 )
@@ -208,5 +210,103 @@ func TestNoEventsIsSaidPlainly(t *testing.T) {
 	output := render(t, []report.Report{value}, "text")
 	if !strings.Contains(output, "no events") {
 		t.Errorf("a clean report did not say so:\n%s", output)
+	}
+}
+
+func TestAppliedReportExplainsTheResultAndGatesARetryOnVisibleTwitching(t *testing.T) {
+	value := sample()
+	value.Operation = "fix"
+	value.Applied = true
+	value.JournalPath = "DJI_0042.MP4.gyrofix.json"
+	value.ScoreBefore, value.ScoreAfter = 100, 15.3
+	value.ClipScoreBefore, value.ClipScoreAfter = 100, 95
+	value.AffectedFraction = 0.04
+	value.Repair = &correct.RepairStats{
+		RunsReplaced: 2372, SamplesReplaced: 21843, RunsTooLong: 10, RunsRealMotion: 44,
+	}
+	value.Warnings = []string{"42 original correction region(s) remain detectable after 3 bounded pass(es)"}
+	value.Advice = &advise.Advice{
+		Verdict:       advise.VerdictPatch,
+		Headline:      "81 correctable events over 19.82 s (3.99% of the clip) — this is what djgyrofix is for",
+		PreviewFile:   "DJI_0042.MP4",
+		RevertCommand: "djgyrofix revert DJI_0042.MP4",
+		Suggestions: []advise.Suggestion{{
+			Flags:   "--sensitivity 1.3",
+			Why:     "42 corrected regions remain above the detector; 1.3 lowers the threshold and gives their residual edges more correction weight",
+			When:    "the stabilized video still twitches at those times",
+			Command: "djgyrofix fix --apply --sensitivity 1.3 DJI_0042.MP4",
+		}},
+	}
+
+	output := render(t, []report.Report{value}, "text")
+	for _, want := range []string{
+		"interpolated 2372 short artifact runs",
+		"motion-like runs",
+		"bounded",
+		"smoothing instead",
+		"84.7% inside the",
+		"corrected regions",
+		"96.0% of footage outside",
+		"correction regions",
+		"Preview DJI_0042.MP4 in Gyroflow",
+		"If stabilization is smooth, stop",
+		"a residual warning alone does not mean",
+		"the repair failed",
+		"Only if the stabilized video still twitches",
+		"djgyrofix revert DJI_0042.MP4",
+		"djgyrofix fix --apply --sensitivity 1.3 DJI_0042.MP4",
+	} {
+		if !strings.Contains(output, want) {
+			t.Errorf("guided report is missing %q:\n%s", want, output)
+		}
+	}
+	if strings.Index(output, "warning:") > strings.Index(output, "next:") {
+		t.Errorf("warning must be visible before the action plan:\n%s", output)
+	}
+	if strings.Contains(output, "try --sensitivity 1.3") {
+		t.Errorf("report fell back to an unscoped floating flag:\n%s", output)
+	}
+}
+
+func TestRunRepairExplainsWhenSmoothingDidAllTheWork(t *testing.T) {
+	value := sample()
+	value.Events = []detect.Event{{Class: detect.ClassImpact, Action: detect.ActionSmooth}}
+	value.Repair = &correct.RepairStats{}
+	output := render(t, []report.Report{value}, "text")
+	for _, want := range []string{
+		"no short artifact runs qualified for interpolation",
+		"bounded smoothing handled the 1 detected event instead",
+	} {
+		if !strings.Contains(output, want) {
+			t.Errorf("fallback report is missing %q:\n%s", want, output)
+		}
+	}
+
+	value.Events = nil
+	output = render(t, []report.Report{value}, "text")
+	if strings.Contains(output, "run-repair:") {
+		t.Errorf("a clean run printed a meaningless zero-work repair line:\n%s", output)
+	}
+}
+
+func TestOutputCopyRetrySaysForceOnlyReplacesTheCopy(t *testing.T) {
+	value := sample()
+	value.Applied = true
+	value.OutputPath = "fixed.MP4"
+	value.Advice = &advise.Advice{
+		Verdict:     advise.VerdictPatch,
+		PreviewFile: "fixed.MP4",
+		Suggestions: []advise.Suggestion{{
+			Flags:   "--sensitivity 1.3",
+			Why:     "one region remains above the detector",
+			When:    "the stabilized video still twitches",
+			Command: "djgyrofix fix --apply --sensitivity 1.3 --out fixed.MP4 --force DJI_0042.MP4",
+		}},
+	}
+	output := render(t, []report.Report{value}, "text")
+	for _, want := range []string{"untouched source", "--force replaces", "only that derived copy", "--out fixed.MP4"} {
+		if !strings.Contains(output, want) {
+			t.Errorf("copy retry is missing %q:\n%s", want, output)
+		}
 	}
 }

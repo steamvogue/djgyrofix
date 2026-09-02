@@ -146,6 +146,26 @@ func TestSuggestionsStayInScope(t *testing.T) {
 	}
 }
 
+func TestUpstreamVerdictDoesNotOfferDetectorTuning(t *testing.T) {
+	input := base()
+	input.Events = []detect.Event{smooth(1, 2, 9)}
+	input.NearMiss = 12
+	input.ResidualRegions = 8
+	input.Scored = true
+	input.ImprovementPercent = 10
+	input.Noise = detect.NoiseProfile{
+		P10: 100, P50: 116, P90: 122, NoisyDPS: 30,
+		NoisyFraction: 1, NoisySeconds: 30,
+	}
+
+	got := advise.Evaluate(input)
+	for _, suggestion := range got.Suggestions {
+		if suggestion.Flags != advise.NoFlag {
+			t.Errorf("upstream diagnosis contradicted itself with %s: %+v", suggestion.Flags, got)
+		}
+	}
+}
+
 func TestShortClipSaysTheBaselineWindowIsInert(t *testing.T) {
 	input := base()
 	input.RollingBaseline = false

@@ -44,8 +44,10 @@ const NoFlag = "(no flag)"
 
 // Suggestion is one concrete parameter change, with the measurement behind it.
 type Suggestion struct {
-	Flags string `json:"flags"`
-	Why   string `json:"why"`
+	Flags   string `json:"flags"`
+	Why     string `json:"why"`
+	When    string `json:"when,omitempty"`
+	Command string `json:"command,omitempty"`
 }
 
 // Advice is the rendered verdict.
@@ -60,6 +62,12 @@ type Advice struct {
 	Prediction  string       `json:"prediction,omitempty"`
 	Suggestions []Suggestion `json:"suggestions,omitempty"`
 	NextCommand string       `json:"next_command,omitempty"`
+	// PreviewFile and RevertCommand are filled by the CLI once it knows whether
+	// this was a scan, a dry run, an in-place patch or an --out copy. Keeping
+	// that state out of Evaluate lets the verdict remain about measurements,
+	// while still giving the text report a safe, exact workflow.
+	PreviewFile   string `json:"preview_file,omitempty"`
+	RevertCommand string `json:"revert_command,omitempty"`
 }
 
 // Input is everything Evaluate reads. It is a plain struct rather than the
@@ -212,7 +220,7 @@ func patch(in Input, actionable int) Advice {
 	}
 	if in.Scored {
 		advice.Prediction = fmt.Sprintf(
-			"predicted residual reduction %.1f%% clip-wide, %.1f%% inside the corrected regions",
+			"planned correction reduces transient residual %.1f%% clip-wide, %.1f%% inside the corrected regions",
 			in.ClipImprovementPercent, in.ImprovementPercent)
 	}
 	return advice
@@ -235,15 +243,31 @@ func clean(in Input) Advice {
 	}
 }
 
-// tuning are the parameter steers that apply regardless of verdict.
+// tuning are the parameter steers that remain consistent with the verdict.
+// An upstream result must never be followed by a detector knob: the whole
+// point of that verdict is that no detector setting can repair the noise floor.
 func tuning(in Input, actionable int, verdict Verdict) []Suggestion {
 	var suggestions []Suggestion
+	if verdict == VerdictUpstream {
+		return suggestions
+	}
+	if verdict == VerdictReview {
+		if !in.RollingBaseline && in.DurationSeconds > 0 {
+			return []Suggestion{{
+				Flags: NoFlag,
+				Why: fmt.Sprintf("under %.0fs the thresholds come from one global baseline, "+
+					"so --baseline-window has no effect on this clip", in.ShortClipSeconds),
+			}}
+		}
+		return suggestions
+	}
 
 	if in.NearMiss >= nearMissTrigger && in.AffectedFraction < in.MaxAffected/2 {
 		suggestions = append(suggestions, Suggestion{
 			Flags: "--profile aggressive",
 			Why: fmt.Sprintf("%d event%s scored just under --min-severity %.1f and were dropped",
 				in.NearMiss, plural(in.NearMiss), in.MinSeverity),
+			When: "visible twitching remains outside the listed regions",
 		})
 	}
 	if in.AffectedFraction > 0 && in.AffectedFraction <= in.MaxAffected &&
@@ -252,6 +276,7 @@ func tuning(in Input, actionable int, verdict Verdict) []Suggestion {
 			Flags: "--profile conservative",
 			Why: fmt.Sprintf("%.1f%% affected is within a whisker of the %.0f%% refusal limit",
 				in.AffectedFraction*100, in.MaxAffected*100),
+			When: "the event list appears to include genuine flight motion",
 		})
 	}
 	// The trigger is the in-region figure, not the clip-wide one. A low
@@ -271,13 +296,16 @@ func tuning(in Input, actionable int, verdict Verdict) []Suggestion {
 			Why: fmt.Sprintf("the correction only removes %.1f%% of the residual it was aimed at, "+
 				"which usually means the derived window is too short for this artifact",
 				in.ImprovementPercent),
+			When: "visible twitching remains inside the listed regions",
 		})
 	}
 	if in.ResidualRegions > 0 {
 		suggestions = append(suggestions, Suggestion{
 			Flags: "--sensitivity 1.3",
-			Why: fmt.Sprintf("%d corrected region%s still trips detection after the bounded passes",
+			Why: fmt.Sprintf("%d corrected region%s remain above the detector; 1.3 lowers the threshold "+
+				"and gives their residual edges more correction weight",
 				in.ResidualRegions, plural(in.ResidualRegions)),
+			When: "the stabilized video still twitches at those times",
 		})
 	}
 	if !in.RollingBaseline && in.DurationSeconds > 0 {
@@ -298,7 +326,8 @@ func tuning(in Input, actionable int, verdict Verdict) []Suggestion {
 	if verdict == VerdictPatch && hasDropout(in.Events) {
 		suggestions = append(suggestions, Suggestion{
 			Flags: "--no-bridge",
-			Why:   "if you would rather no orientation were reconstructed at all",
+			Why:   "bridging is the only step that reconstructs orientation instead of smoothing existing samples",
+			When:  "you prefer to leave corrupt orientation samples untouched",
 		})
 	}
 	return suggestions

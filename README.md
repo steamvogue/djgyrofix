@@ -99,13 +99,30 @@ baseline 0.6 °/s   threshold 60.0 °/s (rolling)
 
 4 events, 1.49 s affected (4.98% of clip)
 
+run-repair: interpolated 11 short artifact runs (42 quaternions)
+  skipped interpolation for 10 long runs and 0 motion-like runs; their events
+  used bounded smoothing instead
+
 dry run: would patch 418 quaternions in 105 samples (6680 bytes)
 
 diagnosis: 4 correctable events over 1.49 s (4.98% of the clip) — this is what
   djgyrofix is for
   noise floor 0.6 °/s typical, 0.6 °/s p90 — quiet enough that these events
   stand out as artifacts
-  next: djgyrofix fix --apply DJI_0042.MP4
+  planned correction reduces transient residual 10.2% clip-wide, 100.0% inside
+  the corrected regions
+  read the in-region figure as the result where correction was aimed; the
+  clip-wide figure also includes the 95.0% of footage outside the
+  correction regions
+next:
+  1. Apply the planned correction:
+     djgyrofix fix --apply DJI_0042.MP4
+     If you prefer to leave corrupt orientation samples untouched, use
+     --no-bridge instead — bridging is the only step that reconstructs
+     orientation instead of smoothing existing samples:
+       djgyrofix fix --apply --no-bridge DJI_0042.MP4
+  2. Preview DJI_0042.MP4 in Gyroflow at the listed times.
+     If stabilization is smooth, stop — you are done.
 ```
 
 Four kinds of event, and only one of them gets reconstructed:
@@ -123,8 +140,9 @@ Four kinds of event, and only one of them gets reconstructed:
 # See what a repair would change, without writing
 djgyrofix fix DJI_0042.MP4
 
-# Detect more, if footage still shakes after a repair
-djgyrofix fix --apply --force --floor-dps 20 DJI_0042.MP4
+# If a residual warning matches visible twitching, restore and retry its advice
+djgyrofix revert DJI_0042.MP4
+djgyrofix fix --apply --sensitivity 1.3 DJI_0042.MP4
 
 # Let it pick settings, and refuse footage it can't help
 djgyrofix fix --auto --apply DJI_0042.MP4

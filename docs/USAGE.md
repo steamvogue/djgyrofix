@@ -67,11 +67,13 @@ sharp movements, where an interpolation is most likely to invent an orientation
 the aircraft never held. Two guards bound that. A run longer than 30 ms is never
 replaced, and a run is only replaced when its endpoints still match the
 surrounding motion — a deviation that departs and *stays* departed is read as
-real motion and left alone. The report says what happened:
+motion-like and is not interpolated. Its event falls back to bounded smoothing,
+which avoids inventing a new orientation path. The report says what happened:
 
 ```
-run-repair: replaced 4901 runs (29112 quaternions); 400 too long to
-interpolate, 12 were real motion
+run-repair: interpolated 4901 short artifact runs (29112 quaternions)
+  skipped interpolation for 400 long runs and 12 motion-like runs; their events
+  used bounded smoothing instead
 ```
 
 There is also a manual path that skips detection entirely:
@@ -218,37 +220,58 @@ Accepted by `scan` and `fix`.
 
 ## If it still shakes
 
-Work down this ladder. Each step is a real thing to try, in the order that pays
-off, and the last two are the honest answer when the metadata is not the
-problem.
+Work down this ladder, but start with the video rather than the detector count.
+The text report now prints this workflow with commands that preserve the flags
+from the scan or dry run.
 
-**1. Switch correction mode.** Run-repair is the default and replaces only the
+**1. Preview the stabilized result.** Check the listed event times in Gyroflow.
+If they are smooth, stop. “Regions remain detectable” means residual signal is
+still above the detector after its bounded passes; it does not by itself mean
+the repair is visibly bad.
+
+**2. Follow a residual suggestion only when it matches what you see.** When the
+report suggests `--sensitivity 1.3`, the higher sensitivity lowers the detection
+threshold and gives the residual edges more correction weight. Restore the
+original before retrying an in-place patch:
+
+```bash
+djgyrofix revert DJI_0042.MP4
+djgyrofix fix --apply --sensitivity 1.3 DJI_0042.MP4
+```
+
+For `--out`, the source is already untouched. The report instead gives a
+command that replaces only the derived copy.
+
+**3. Switch correction mode.** Run-repair is the default and replaces only the
 samples that are out of trend; the blur smooths a whole event. If a repair looks
 worse, try the other one — they fail differently.
 
 ```bash
-djgyrofix fix --apply --force --repair blur DJI_0042.MP4
+djgyrofix revert DJI_0042.MP4
+djgyrofix fix --apply --repair blur DJI_0042.MP4
 ```
 
-**2. Lower the floor.** This is the strongest knob in the tool. The default of
-60 °/s only admits transients far above the real noise floor, which on measured
-footage sits near 3 °/s.
+**4. Lower the floor when visible twitching falls outside the listed events.**
+This is a much larger detection change than the scoped sensitivity retry. The
+default of 60 °/s only admits transients far above the real noise floor, which
+on measured footage sits near 3 °/s.
 
 ```bash
-djgyrofix fix --apply --force --floor-dps 20 DJI_0042.MP4
+djgyrofix revert DJI_0042.MP4
+djgyrofix fix --apply --floor-dps 20 DJI_0042.MP4
 ```
 
 Below about 10 the false positives start: on a clip known to be good, 15 still
 reports one event and 10 reports six. Twenty is the recommended step.
 
-**3. Check the verdict, not just the events.** If `scan` says `upstream`, no
+**5. Check the verdict, not just the events.** If `scan` says `upstream`, no
 amount of tuning will help — the noise floor itself is the defect.
 
 ```bash
 djgyrofix scan --format json DJI_0042.MP4 | jq '.advice'
 ```
 
-**4. Accept the ceiling.** Three things are mixed together in shaky stabilized
+**6. Accept the ceiling.** Three things are mixed together in shaky stabilized
 footage and this tool addresses only the first:
 
 - Transients in the metadata — what it repairs.
@@ -258,7 +281,7 @@ footage and this tool addresses only the first:
   Gyroflow's own rolling-shutter correction handles it, given the right readout
   time.
 
-**5. Try it on Gyroflow's side.** Pilots report the Complementary integration
+**7. Try it on Gyroflow's side.** Pilots report the Complementary integration
 method and the low-pass filter helping on affected units.
 
 ## Comparing settings by eye

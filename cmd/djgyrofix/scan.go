@@ -59,6 +59,7 @@ step on footage you care about.`,
 			return report.Report{}, err
 		}
 		result.report.DryRun = true
+		finalizeReport(&result.report, opts, "scan")
 		return result.report, nil
 	})
 	if err := report.Write(os.Stdout, reports, opts.format); err != nil {

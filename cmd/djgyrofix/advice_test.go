@@ -209,16 +209,18 @@ func TestExplicitFlagsSurviveAutopilot(t *testing.T) {
 const adviceLineLimit = 86
 
 func TestTextReportRendersTheDiagnosis(t *testing.T) {
-	result, err := analyze(writeFixture(t, synth.DefectMixed), defaultOptions(), nil)
+	opts := defaultOptions()
+	result, err := analyze(writeFixture(t, synth.DefectMixed), opts, nil)
 	if err != nil {
 		t.Fatalf("analyze: %v", err)
 	}
+	finalizeReport(&result.report, opts, "scan")
 	var buffer bytes.Buffer
 	if err := report.Write(&buffer, []report.Report{result.report}, "text"); err != nil {
 		t.Fatal(err)
 	}
 	output := buffer.String()
-	for _, want := range []string{"diagnosis:", "next: djgyrofix fix --apply"} {
+	for _, want := range []string{"diagnosis:", "next:", "Apply the planned correction:", "djgyrofix fix --apply", "Preview"} {
 		if !strings.Contains(output, want) {
 			t.Errorf("the text report omits %q\n%s", want, output)
 		}
