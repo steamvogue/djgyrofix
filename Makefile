@@ -17,7 +17,10 @@ PLATFORMS = linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 wind
 
 .PHONY: all build version test race cover vet fmt lint fuzz parity fixtures dist clean
 
-all: fmt vet test build
+# lint already depends on fmt and vet, and it is what CI gates on. Listing
+# fmt and vet here instead would make `all` quieter than the build it is meant
+# to predict.
+all: lint test build
 
 build:
 	$(GO) build -ldflags="$(LDFLAGS)" -o djgyrofix ./cmd/djgyrofix
