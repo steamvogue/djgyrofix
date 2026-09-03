@@ -23,10 +23,11 @@ are the authority where they disagree:
   alone breaks the byte-parity gate §9.1 depends on. Every product in the numeric
   core carries an explicit `float64()` barrier, and `TestNumericCoreIsNotFused`
   greps the compiled assembly to keep it that way.
-- **§10 Tier 3 (`.gcsv` sidecar export) is not implemented.** The plan flags it
-  as needing verification against Gyroflow's parser for units, axis convention
-  and orientation string. That verification has not happened, and shipping an
-  unverified guess would be worse than shipping nothing.
+- **§10 Tier 3 (`.gcsv` sidecar export) is declined, not merely unbuilt.** The
+  verification the plan asked for has happened: the format is fully specified,
+  so it could be built. It should not be. Gyroflow reads DJI's fused quaternions
+  directly and `.gcsv` carries angular rate only, so exporting one would add
+  drift through a reintegration the in-place patch never needs. See §10.
 - **§5.1 and §6.2 were replaced after real-footage validation.** The defect is
   frame vibration recorded into the attitude track, surviving as brief
   excursions from the local trend — median 4 ms on the measured clip, spread
