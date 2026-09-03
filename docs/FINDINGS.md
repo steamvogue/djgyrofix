@@ -175,6 +175,37 @@ Measured over both clips, it is structural rather than a defect of either:
 The duplicates sit at a fixed parity — 496,733 even against 26 odd on RAW. DJI
 presents 1978 Hz while carrying 989 Hz of information.
 
+**It is the frame rate that decides this, not the format.** Every clip measured
+packs about 33.3 quaternion slots into each video frame and fills them from an
+IMU running near 1000 Hz, so the repeat factor is `33.3 x fps / 1000`. Both air
+units are 59.94 fps and pad by exactly two; the 29.97 fps Osmo pads by exactly
+one and has a duplicate share of 0.00. `info` now prints the share and the
+information rate it implies, because a new camera is where this changes.
+
+| fps | stored | padding | duplicate share |
+|---|---|---|---|
+| 30 | ~999 Hz | x1.00 | 0.00 (Osmo, measured) |
+| 48 | ~1598 Hz | x1.60 | 0.37 |
+| 50 | ~1665 Hz | x1.66 | 0.40 |
+| 60 | ~1998 Hz | x2.00 | 0.50 (both air units, measured) |
+| 120 | ~3996 Hz | x4.00 | 0.75 |
+
+Only 30 and 60 have been seen, and the threshold that decides whether to collapse
+the repeats was originally set from those two alone at 0.40 — which sits directly
+on top of the 48 and 50 fps cases. Both are ordinary shooting modes, and either
+would have been left uncollapsed and differenced into the square wave described
+below. The threshold is now 0.15, six orders of magnitude above a genuine frozen
+dropout and less than half the smallest real padding.
+
+Collapsing a fractional ratio is an improvement rather than a cure. A whole-number
+ratio gives runs of one length and the floor returns to where an unpadded stream
+sits; a fractional one alternates between run lengths, so the interval between
+distinct orientations keeps moving and some of that survives. Against a 0.56 °/s
+unpadded floor, a 1.6 ratio measures 4.20 °/s uncollapsed and 2.29 collapsed.
+Closing the rest would mean resampling onto the distinct orientations instead of
+holding velocity across the repeats, which no clip here justifies — nothing at 48
+or 50 fps has been seen.
+
 Differencing consecutive stored samples, which is what this tool did, turns that
 into a square wave at Nyquist. Every other velocity is exactly zero and the rest
 are twice the true rate:
@@ -479,11 +510,87 @@ be a guess dressed as a feature. It is surfaced in `info` so that incoming
 footage is checked for one, and it is written down here so the option is not
 rediscovered.
 
+## An Osmo, and what the upstream verdict cannot tell you
+
+`OSM_20260808192827_0003_D.MP4` is 346 s from an Osmo with visible vibration in
+the footage that is not the result of sharp flying. It needed no new support:
+its metadata track sits behind a `CAM meta` handler rather than `DJI meta`, but
+the `djmd` sample entry selects it and the same `wm169` path finds 344,493
+quaternions. Two differences from the air-unit clips are worth recording.
+
+**It does not duplicate**, because it is a 29.97 fps clip. The O4 clips are
+59.94 fps and store 1978 Hz of which exactly half is padding; this one stores 989
+Hz of unique attitude, `duplicate_share` 0.00. Both cameras are filling about
+33.3 slots per video frame from an IMU near 1000 Hz — see the frame-rate table
+above, which this clip is what established. Its Nyquist limit is therefore 494.5
+Hz where theirs is 989, and that matters for the band found below.
+
+**It is the first clip here to come back `upstream`**, and by a wide margin. Its
+noise floor is 113.7 °/s typical against the artifact clip's 3.4, with 87% of
+the footage at or above 45 °/s. One event is found in 346 s. The report says the
+metadata is not what is wrong, and recommends the mount and the tune.
+
+That recommendation is right. The reasoning behind it is thinner than it looks.
+
+### The roughness is coherent, not a floor
+
+Taking the angular rate between consecutive stored orientations and running a
+Hann-windowed DFT over the roughest and quietest 4096-sample windows:
+
+| band | quietest window | roughest window |
+|---|---|---|
+| 1–8 Hz | 0.10 | 0.78 |
+| **8–16 Hz** | 0.10 | **2.45** |
+| 16–63 Hz | 0.08 | 0.42 |
+| 63–400 Hz | 0.06 | 0.15 |
+| 430–450 Hz | 0.04 | 0.35 |
+| **450–480 Hz** | 0.05 | **1.38** |
+| 480–494 Hz | 0.04 | 0.30 |
+
+The quiet window is flat — 8.3 °/s rms, no structure. The rough window is 138.9
+°/s rms and has two distinct components: a dominant one at **9 Hz** and a
+narrow band at **450–480 Hz**, each about an order of magnitude above the
+63–400 Hz floor between them.
+
+Neither is broadband sensor noise. Noise has no band to find, and a derivative's
+noise tilt rises smoothly to Nyquist rather than peaking at 465 Hz and falling
+away by 480. Two coherent oscillations driving the camera is what a mechanical
+resonance looks like, which is why the mount-and-tune advice lands even though
+the tool reached it by calling the floor high.
+
+Whether 450–480 Hz is the real frequency or an alias of 509–539 Hz folding back
+across the 494.5 Hz Nyquist limit, this data cannot say. Distinguishing them
+needs a faster reference than the metadata provides.
+
+### Why this tool cannot help, in its own terms
+
+The detector's model is a transient excursion from a local trend. A sustained
+9 Hz oscillation is not a transient — over a 12 s baseline window it *is* the
+trend, so the rolling threshold rises to meet it (341.1 °/s here) and detection
+goes quiet exactly where the footage is worst. The report already warns that a
+short event list is not a clean bill of health on a rough clip. This clip is
+what that warning was written for.
+
+Attenuating a coherent 9 Hz component is a filtering problem, not a
+transient-repair one, and Gyroflow's own low-pass is the right instrument for
+it. Nothing here should try to grow into that.
+
+### What the diagnosis could say and does not
+
+`upstream` currently reports one number, the noise floor, and gives one remedy.
+It cannot separate a genuinely noisy sensor from a mount resonance, and those
+have different fixes. The measurement above took a DFT over two windows to
+answer, and it produced something a pilot can act on — *9 Hz, and something near
+465 Hz* — where "your noise floor is 113.7 °/s" does not point at anything.
+Reporting the dominant frequencies alongside an `upstream` verdict would make it
+a much better diagnostic. It is not implemented; one clip is not enough to
+choose thresholds for it.
+
 ## Scope of the evidence
 
-This is two real clips plus generated fixtures designed to isolate clean
-vector changes, sustained ringing, true short corruption, continuous
-over-rate motion and correction composition. It validates this failure mode and
+This is three real clips — two O4 air units and one Osmo — plus generated
+fixtures designed to isolate clean vector changes, sustained ringing, true short
+corruption, continuous over-rate motion and correction composition. It validates this failure mode and
 the full patch/verify/revert path; it is not yet a broad labelled corpus across
 air-unit models, mounts and flight styles. New footage should still be scanned
 first, and early tests should use a copy or `--out`.

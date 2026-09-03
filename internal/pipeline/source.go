@@ -384,3 +384,21 @@ func containerScalars(sample []byte, path []int) (stamp, sequence uint64, found 
 	}
 	return stamp, sequence, haveStamp && haveSequence
 }
+
+// DuplicatePairShare is the fraction of quaternions identical to the one before
+// them. DJI fills a fixed number of slots per video frame from an IMU running
+// near 1000 Hz, so this is a function of frame rate rather than a property of
+// the format: none at 30 fps, a half at 60. Detection uses its own copy to
+// decide whether to collapse the repeats; this one is for reporting.
+func DuplicatePairShare(values []quat.Q) float64 {
+	if len(values) < 2 {
+		return 0
+	}
+	identical := 0
+	for index := 1; index < len(values); index++ {
+		if values[index] == values[index-1] {
+			identical++
+		}
+	}
+	return float64(identical) / float64(len(values)-1)
+}

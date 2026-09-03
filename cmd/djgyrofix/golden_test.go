@@ -98,6 +98,12 @@ var detectionCases = []detectionCase{
 		tune:   func(o *options) { o.floorDPS = 20 },
 	},
 	{name: "corpus-villa2", corpus: "DJI_20260830_VILLA2.MP4"},
+	// An Osmo, which reaches the same wm169 path under a "CAM meta" handler
+	// rather than "DJI meta", and stores 989 Hz of unduplicated attitude where
+	// the air units store 1978 Hz of which half is padding. It is also the only
+	// clip here that comes back upstream, so it pins that verdict against a real
+	// measurement rather than a synthetic noise floor.
+	{name: "corpus-osmo", corpus: "OSM_20260808192827_0003_D.MP4"},
 }
 
 func TestDetectionGolden(t *testing.T) {

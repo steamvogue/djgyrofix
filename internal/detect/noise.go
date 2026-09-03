@@ -132,11 +132,22 @@ const nearMissSeverity = 1.5
 // which a stream is treated as oversampled rather than as carrying occasional
 // repeats.
 //
-// Both real DJI clips measured sit at exactly 0.5000, and the synthetic
-// fixtures — including the one with a deliberate frozen dropout — sit near
-// zero. Nothing observed falls between, so the threshold only has to separate
-// "half the file" from "a handful of samples".
-const structuralDuplicateShare = 0.4
+// The padding is a consequence of frame rate, not a fixed property of DJI's
+// format. Every clip measured packs about 33.3 quaternion slots into each video
+// frame and fills them from an IMU running near 1000 Hz, so the repeat factor is
+// 33.3 x fps / 1000: one at 30 fps and two at 60, which is exactly what the
+// three measured clips show — 0.00 duplicate share on a 29.97 fps Osmo and
+// 0.5000 on both 59.94 fps air units.
+//
+// That makes the intermediate rates the ones this threshold has to survive. A
+// 48 or 50 fps clip pads by a fractional 1.6 to 1.66, giving a duplicate share
+// near 0.37 to 0.40 — under the 0.4 this constant used to hold, which would have
+// left the stream uncollapsed and differenced into a square wave at Nyquist.
+// There is no such clip here to test against; the value below is set from the
+// model rather than from a measurement, and is deliberately far from both ends
+// of it. A genuine frozen dropout is two samples in a million, six orders of
+// magnitude below this; the smallest real padding is 0.37, more than twice it.
+const structuralDuplicateShare = 0.15
 
 // duplicatePairShare is the fraction of quaternions identical to the one before
 // them.

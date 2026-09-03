@@ -6,6 +6,26 @@ Notable changes to djgyrofix. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Oversampling went undetected at 48 and 50 fps.** The padding DJI applies is
+  a function of frame rate — about 33.3 quaternion slots per video frame filled
+  from a ~1000 Hz IMU — so it is none at 30 fps and double at 60. The threshold
+  deciding whether to collapse the repeats was set from those two rates alone at
+  0.40, which sits on top of the 0.37–0.40 share a 48 or 50 fps clip produces.
+  Either would have been differenced into a square wave at Nyquist, the failure
+  that once lifted a measured noise floor from 3.4 to 37.9 °/s. Now 0.15. No
+  detection table moved, so nothing measured here changes.
+
+### Added
+
+- **`info` reports how much of the stored rate is padding**, and the information
+  rate it implies. This is where a new camera or frame rate shows itself.
+- **An Osmo clip joins the pinned detection tables.** It needed no new support —
+  a `CAM meta` handler reaching the same `wm169` path — and it is the first
+  measured clip to come back `upstream`, so that verdict is now pinned against
+  real footage rather than a synthetic noise floor. See FINDINGS.
+
 ## [0.11.0] — 2026-09-03
 
 ### Changed

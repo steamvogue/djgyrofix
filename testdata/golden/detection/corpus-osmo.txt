@@ -1,0 +1,13 @@
+clip       346.346 s  10380 samples  344493 quaternions @ 989.0 Hz  duplicates 0.0%
+baseline   113.7 dps  threshold 341.1 dps (rolling)
+noise      p10 27.6  p50 113.7  p90 134.6 dps  noisy 87.1% (301.79 s) at >= 45.0 dps
+events     1 found  1 actionable  1 near-miss  0.140 s affected (0.04%)
+
+    #      start        end  class    action    sev  peak_dps   ratio  axes      peaks window_ms
+    1    337.430    337.570  jitter   smooth   10.0    1600.8    72.8  X/Y           3     120.0
+
+run-repair 2 runs interpolated (3 quaternions)  0 too long  3 motion-like
+writes     338 quaternions in 11 samples
+residual   98.4% reduced in region  0.0% clip-wide
+verdict    upstream
+suggests   (note)

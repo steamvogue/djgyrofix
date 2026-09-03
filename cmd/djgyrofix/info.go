@@ -117,6 +117,19 @@ func infoOne(path string, override djiproto.Variant, allVariants bool) error {
 		fmt.Printf("  video:     %.3f fps\n", fps)
 	}
 
+	// How much of the stored rate is padding. DJI packs a fixed number of slots
+	// into each video frame and fills them from an IMU near 1000 Hz, so this
+	// rises with frame rate: none at 30 fps, half at 60. It decides whether
+	// detection collapses the repeats, and getting it wrong turns the padding
+	// into a square wave at Nyquist, so it is worth seeing on a new camera.
+	if share := pipeline.DuplicatePairShare(pipeline.Values(points)); len(points) > 1 {
+		fmt.Printf("  padding:   %.1f%% of stored quaternions repeat their predecessor", share*100)
+		if share > 0.02 {
+			fmt.Printf(" (x%.2f, ~%.0f Hz of information)", 1/(1-share), float64(len(points))/source.DurationSeconds()*(1-share))
+		}
+		fmt.Println()
+	}
+
 	// DJI's own clock, printed beside the container's. On contributed footage
 	// this is the first place a dropped metadata sample or an odd clock would
 	// show, and neither is visible anywhere else.
