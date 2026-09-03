@@ -48,6 +48,7 @@ type Report struct {
 	AffectedSeconds  float64             `json:"affected_seconds"`
 	AffectedFraction float64             `json:"affected_fraction"`
 	Noise            detect.NoiseProfile `json:"noise"`
+	Kinetics         detect.Kinetics     `json:"kinetics"`
 	NearMissEvents   int                 `json:"near_miss_events"`
 	// DuplicateShare is the fraction of stored quaternions identical to their
 	// predecessor. DJI oversamples its fused attitude, so real footage sits at

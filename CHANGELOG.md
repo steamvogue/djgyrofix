@@ -8,6 +8,16 @@ Notable changes to djgyrofix. The format follows
 
 ### Added
 
+- **The verdict now considers how hard the aircraft was turning, not only how
+  clean the record is.** A clip with an immaculate 6.7 °/s residual floor was
+  called patchable and still jerked after every correction, because a tenth of it
+  is flown past 333 °/s — where rolling-shutter skew reaches roughly 13° within a
+  single frame at a nominal 15 ms readout, and motion blur is smearing it beside
+  that. Neither is in the attitude track. Reports now carry absolute rotation
+  rate percentiles, say so in the verdict when a meaningful share of a clip is
+  past that threshold, and **withhold every detector suggestion** there, since
+  each would spend its effect smoothing real motion. See FINDINGS.
+
 - **Correction is now held to a continuity invariant separate from its score.**
   Measured on real events, freezing orientation through each one scores better
   than every shipped method on both residual figures while introducing a 156.8°

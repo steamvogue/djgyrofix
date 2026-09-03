@@ -112,6 +112,7 @@ func analyzeAuto(source *pipeline.Source, opts *options, result *analysis) error
 	result.report.AffectedSeconds = detected.AffectedSeconds
 	result.report.AffectedFraction = detected.AffectedFraction
 	result.report.Noise = detected.Noise
+	result.report.Kinetics = detected.Kinetics
 	result.report.NearMissEvents = detected.NearMiss
 	result.report.DuplicateShare = detected.DuplicateShare
 	result.events = detected.Events
@@ -204,6 +205,7 @@ func adviseReport(rep *report.Report, params detect.Params, opts *options, resid
 		AffectedSeconds:        rep.AffectedSeconds,
 		AffectedFraction:       rep.AffectedFraction,
 		Noise:                  rep.Noise,
+		Kinetics:               rep.Kinetics,
 		NearMiss:               rep.NearMissEvents,
 		RollingBaseline:        rep.RollingBaseline,
 		ShortClipSeconds:       params.ShortClipSeconds,

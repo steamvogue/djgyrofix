@@ -72,6 +72,14 @@ better tune — not this tool.
 It also can't help with rolling-shutter wobble, which isn't in the metadata at
 all. Gyroflow's own rolling-shutter correction handles that.
 
+**And it can't help when you simply flew very fast.** Past roughly 330 °/s a
+rolling shutter skews the frame by several degrees *internally*, before
+stabilization sees it, and motion blur smears it as well. On one measured clip a
+tenth of the footage is past that, with a metadata track cleaner than anything
+else here — and it still jerks, because the problem was never the metadata. The
+scan says so when it sees it, and deliberately stops suggesting stronger
+settings, since those only smooth away real motion.
+
 So it's also a diagnostic. Every scan ends in a plain verdict:
 
 - **`patch`** — a handful of artifacts. This is what the tool is for.

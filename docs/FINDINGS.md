@@ -665,6 +665,57 @@ here measures the motion a correction wrongly removed. It is recorded because it
 is a real number pointing the other way from a decision already taken, and
 because the labelled corpus is what would settle it.
 
+## Clean metadata that stabilizes badly anyway
+
+`DJI_20260512144600_0012_D.MP4` is 66 s from an O4 on firmware 01.00.03.00. Its
+owner reports that it jerks after stabilization no matter what correction is
+applied, including `--profile aggressive --sensitivity 1.5 --smoothing-ms 200`.
+
+The tool called it patchable, and by its own measure it was right: 58 events,
+10.5% affected, and a residual floor of **6.7 °/s** — cleaner in proportion than
+anything else measured here, since the aircraft is turning at rates where 6.7 is
+1.3% of the signal. There is nothing much wrong with the record.
+
+The problem is what was recorded.
+
+| clip | rate p50 | p90 | p99 | above 333 °/s | skew at 15 ms |
+|---|---|---|---|---|---|
+| **0012_D (jerks)** | 50 | 333 | 854 | **10.0%** | **12.8°** |
+| RAW (real artifacts) | 35 | 166 | 430 | 2.2% | 6.4° |
+| VILLA2 (owner: normal) | 10 | 21 | 37 | 0.006% | 0.6° |
+
+A tenth of this clip is flown faster than 333 °/s. Rolling-shutter skew is rate
+times readout time, so at a nominal 15 ms line-scan the frame is distorted by
+around 12.8° *internally*, before stabilization sees it, and motion blur has
+smeared it as well. Neither is in the attitude track. No amount of attitude
+correction reaches either one, and the spectrum agrees: the rough windows here
+are 50 times stronger at 1–4 Hz than anywhere above, which is the aircraft
+flying, not an artifact.
+
+Two hypotheses were checked and discarded on the way. The metadata track steps
+**one-for-one with the video track** — 3945 samples against 3945 frames, same
+timescale — so the difference between DJI's own clock and the container cannot
+put attitude out of step with frames, whatever else it means. And the padding is
+the ordinary 50% for a 59.94 fps clip.
+
+### What the tool got wrong
+
+It said "this is what djgyrofix is for", and then suggested a stronger detector
+when the correction did not visibly help. Both were wrong in the same way:
+nothing in the verdict looked at how hard the aircraft was actually turning. The
+residual figures describe how faithful the record is; they cannot describe
+whether stabilizing that record was ever going to work.
+
+The report now measures absolute rotation rate beside the residual, and where a
+meaningful share of a clip is past the skew threshold it says so in the verdict
+block and withholds every detector suggestion — because each of them would spend
+its effect smoothing real motion, which is how a clip gets worse the harder it is
+corrected. That is what the settings above were doing.
+
+The 5% threshold that decides this is set from three clips and separates the one
+that behaves this way from the one with genuine artifacts. It is a judgement
+call and wants a corpus.
+
 ## Scope of the evidence
 
 This is three real clips — two O4 air units and one Osmo — plus generated

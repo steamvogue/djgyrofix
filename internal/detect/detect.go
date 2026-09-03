@@ -53,6 +53,9 @@ type Result struct {
 	// Noise describes the residual floor across the clip, which the rolling
 	// threshold otherwise hides.
 	Noise NoiseProfile `json:"noise"`
+	// Kinetics describes how hard the aircraft was turning, which decides
+	// whether stabilization has a chance regardless of how clean the record is.
+	Kinetics Kinetics `json:"kinetics"`
 	// NearMiss counts events that were dropped only because they scored just
 	// under MinSeverity. A cluster of them means a stricter profile than the
 	// footage needs.
@@ -145,6 +148,7 @@ func Run(points []pipeline.Point, params Params) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	result.Kinetics = kinetics(velocities)
 
 	lowpassRadius := quat.PyRound(params.LowpassSeconds / interval)
 	if lowpassRadius < 2 {

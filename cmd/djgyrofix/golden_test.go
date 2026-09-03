@@ -104,6 +104,11 @@ var detectionCases = []detectionCase{
 	// clip here that comes back upstream, so it pins that verdict against a real
 	// measurement rather than a synthetic noise floor.
 	{name: "corpus-osmo", corpus: "OSM_20260808192827_0003_D.MP4"},
+	// Clean metadata, a patchable verdict, and footage its owner reports as
+	// jerking after any correction. It pins the case the residual figures alone
+	// cannot describe: a tenth of it is flown past the rolling-shutter skew
+	// threshold, which no attitude correction reaches.
+	{name: "corpus-fast", corpus: "DJI_20260512144600_0012_D.MP4"},
 }
 
 func TestDetectionGolden(t *testing.T) {
@@ -234,6 +239,9 @@ func renderDetection(rep report.Report) string {
 	fmt.Fprintf(&out, "noise      p10 %.1f  p50 %.1f  p90 %.1f dps  noisy %.1f%% (%.2f s) at >= %.1f dps\n",
 		rep.Noise.P10, rep.Noise.P50, rep.Noise.P90,
 		rep.Noise.NoisyFraction*100, rep.Noise.NoisySeconds, rep.Noise.NoisyDPS)
+	fmt.Fprintf(&out, "rate       p50 %.1f  p90 %.1f  p99 %.1f dps  %.2f%% above %.0f (skew ~%.1f°)\n",
+		rep.Kinetics.P50DPS, rep.Kinetics.P90DPS, rep.Kinetics.P99DPS,
+		rep.Kinetics.FastFraction*100, rep.Kinetics.FastDPS, rep.Kinetics.SkewP99Degrees)
 	fmt.Fprintf(&out, "events     %d found  %d actionable  %d near-miss  %.3f s affected (%.2f%%)\n",
 		len(rep.Events), actionable(rep.Events), rep.NearMissEvents,
 		rep.AffectedSeconds, rep.AffectedFraction*100)

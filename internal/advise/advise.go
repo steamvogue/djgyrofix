@@ -94,6 +94,9 @@ type Input struct {
 	// ClipImprovementPercent is the same reduction over the whole clip.
 	ClipImprovementPercent float64
 	Scored                 bool
+	// Kinetics is how hard the aircraft was turning, which decides whether
+	// stabilization has a chance at all regardless of metadata quality.
+	Kinetics detect.Kinetics
 	// ResidualRegions is how many original correction regions were still
 	// detectable after the bounded passes.
 	ResidualRegions int
@@ -218,12 +221,32 @@ func patch(in Input, actionable int) Advice {
 		},
 		NextCommand: fmt.Sprintf("djgyrofix fix --apply %s", in.File),
 	}
+	if kineticsDominate(in) {
+		advice.Reasons = append(advice.Reasons, fmt.Sprintf(
+			"but %.0f%% of the clip turns faster than %.0f °/s, and at that rate rolling shutter and "+
+				"motion blur are shaping the frame more than the attitude track is — if it still jerks "+
+				"after this, that is where to look, not at a stronger correction",
+			in.Kinetics.FastFraction*100, in.Kinetics.FastDPS))
+	}
 	if in.Scored {
 		advice.Prediction = fmt.Sprintf(
 			"planned correction reduces transient residual %.1f%% clip-wide, %.1f%% inside the corrected regions",
 			in.ClipImprovementPercent, in.ImprovementPercent)
 	}
 	return advice
+}
+
+// kineticsDominateFraction is the share of a clip past the skew threshold above
+// which rolling shutter and motion blur are the larger problem.
+//
+// Set from three clips, which is not many: one flown hard enough to stabilize
+// badly with clean metadata sits at 0.10, the clip with real metadata artifacts
+// at 0.02, and an ordinary flight at 0.0001. It is placed to separate the first
+// from the second and will want revisiting against a corpus.
+const kineticsDominateFraction = 0.05
+
+func kineticsDominate(in Input) bool {
+	return in.Kinetics.FastDPS > 0 && in.Kinetics.FastFraction >= kineticsDominateFraction
 }
 
 // clean is the answer that saves an evening: nothing here to patch.
@@ -250,6 +273,23 @@ func tuning(in Input, actionable int, verdict Verdict) []Suggestion {
 	var suggestions []Suggestion
 	if verdict == VerdictUpstream {
 		return suggestions
+	}
+	// Correcting harder cannot reach a frame that was distorted inside itself
+	// before stabilization saw it. Where the aircraft is turning fast enough for
+	// rolling-shutter skew and motion blur to dominate, every detector knob
+	// below would spend its effect smoothing real motion, which is how a clip
+	// gets worse the harder it is corrected. Measured on the clip that prompted
+	// this: a clean 6.7 deg/s residual floor, and a tenth of the footage past
+	// the skew threshold.
+	if kineticsDominate(in) {
+		return []Suggestion{{
+			Flags: NoFlag,
+			Why: fmt.Sprintf("%.0f%% of this clip is turning faster than %.0f °/s, where a %.0f ms "+
+				"readout skews the frame about %.1f° internally — neither that nor the motion blur "+
+				"beside it is in the attitude track, so no detector setting reaches them",
+				in.Kinetics.FastFraction*100, in.Kinetics.FastDPS,
+				detect.NominalReadoutSeconds*1000, in.Kinetics.SkewP99Degrees),
+		}}
 	}
 	if verdict == VerdictReview {
 		if !in.RollingBaseline && in.DurationSeconds > 0 {

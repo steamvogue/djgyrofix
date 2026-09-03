@@ -169,3 +169,70 @@ func duplicatePairShare(values []quat.Q) float64 {
 	}
 	return float64(identical) / float64(len(values)-1)
 }
+
+// Kinetics describes how hard the aircraft was actually turning. It is entirely
+// separate from the noise profile: that measures how faithful the *record* of
+// the motion is, this measures the motion itself.
+//
+// It exists because a clip can have an immaculate metadata track and still
+// stabilize badly. Rolling-shutter skew is rate times readout time, and readout
+// is a property of the camera that no amount of attitude correction touches; at
+// several hundred degrees per second the frame is distorted internally before
+// stabilization sees it, and motion blur has smeared it as well. A verdict that
+// looks only at residual will call such a clip patchable, because by its own
+// measure it is — and then patching will not help.
+type Kinetics struct {
+	// P50DPS, P90DPS and P99DPS are percentiles of the absolute rotation rate.
+	P50DPS float64 `json:"p50_dps"`
+	P90DPS float64 `json:"p90_dps"`
+	P99DPS float64 `json:"p99_dps"`
+	// FastFraction is the share of the clip above FastDPS.
+	FastFraction float64 `json:"fast_fraction"`
+	// FastDPS is the rate that fraction was measured against.
+	FastDPS float64 `json:"fast_dps"`
+	// SkewP99Degrees is the within-frame rolling-shutter skew the p99 rate
+	// implies at NominalReadoutSeconds. It is an order-of-magnitude figure, not
+	// a measurement: real readout is camera-specific and Gyroflow ships a
+	// separate tool to measure it.
+	SkewP99Degrees float64 `json:"skew_p99_degrees"`
+}
+
+// NominalReadoutSeconds is the readout time the skew estimate assumes. Fifteen
+// milliseconds is a common figure for a 4K sensor line-scan and is used only to
+// turn a rotation rate into a number a reader can picture.
+const NominalReadoutSeconds = 0.015
+
+// FastDPS is the rate above which rolling-shutter skew reaches roughly five
+// degrees within a single frame at the nominal readout. Past this the frame is
+// being distorted internally faster than any attitude correction can matter.
+const FastDPS = 5.0 / NominalReadoutSeconds
+
+// kinetics summarises the absolute rotation rate.
+func kinetics(velocities []vec3) Kinetics {
+	if len(velocities) == 0 {
+		return Kinetics{FastDPS: FastDPS}
+	}
+	magnitudes := make([]float64, len(velocities))
+	fast := 0
+	for index, velocity := range velocities {
+		magnitude := math.Sqrt(velocity[0]*velocity[0] + velocity[1]*velocity[1] + velocity[2]*velocity[2])
+		magnitudes[index] = magnitude
+		if magnitude > FastDPS {
+			fast++
+		}
+	}
+	sort.Float64s(magnitudes)
+	at := func(fraction float64) float64 {
+		index := int(float64(len(magnitudes)-1) * fraction)
+		return magnitudes[index]
+	}
+	result := Kinetics{
+		P50DPS:       at(0.50),
+		P90DPS:       at(0.90),
+		P99DPS:       at(0.99),
+		FastFraction: float64(fast) / float64(len(magnitudes)),
+		FastDPS:      FastDPS,
+	}
+	result.SkewP99Degrees = result.P99DPS * NominalReadoutSeconds
+	return result
+}

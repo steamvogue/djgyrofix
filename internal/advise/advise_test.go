@@ -247,3 +247,63 @@ func TestUnscoredResidualRegionsStaySilent(t *testing.T) {
 		}
 	}
 }
+
+// TestFastFlightStopsTheAdviceAskingForMoreCorrection covers the case a real
+// clip exposed: an immaculate metadata track, a patchable verdict, and footage
+// that still jerks after patching because the aircraft was turning fast enough
+// for rolling-shutter skew and motion blur to shape the frame before
+// stabilization saw it. Neither is in the attitude track, so every detector
+// knob spends its effect smoothing real motion — which is how a clip gets worse
+// the harder it is corrected.
+func TestFastFlightStopsTheAdviceAskingForMoreCorrection(t *testing.T) {
+	fast := func(fraction float64) advise.Input {
+		input := base()
+		input.Events = []detect.Event{smooth(1, 2, 9)}
+		input.AffectedSeconds, input.AffectedFraction = 1, 1.0/30
+		input.NearMiss = 12
+		input.ResidualRegions = 20
+		input.Scored = true
+		input.ImprovementPercent = 20
+		input.Kinetics = detect.Kinetics{
+			P50DPS: 50, P90DPS: 333, P99DPS: 853,
+			FastFraction: fraction, FastDPS: detect.FastDPS, SkewP99Degrees: 12.8,
+		}
+		return input
+	}
+
+	// The measured clip sits at 0.10; the one with real artifacts at 0.02.
+	got := advise.Evaluate(fast(0.10))
+	for _, suggestion := range got.Suggestions {
+		if suggestion.Flags != advise.NoFlag {
+			t.Errorf("fast flight was answered with %s, which cannot reach a frame "+
+				"distorted before stabilization saw it", suggestion.Flags)
+		}
+	}
+	if len(got.Suggestions) == 0 {
+		t.Error("fast flight was not explained at all")
+	}
+	if !containsAny(got.Reasons, "turns faster") {
+		t.Errorf("the verdict block does not mention the rate: %+v", got.Reasons)
+	}
+
+	// Ordinary flight must be unaffected: the tuning ladder still applies.
+	quiet := advise.Evaluate(fast(0.02))
+	flagged := false
+	for _, suggestion := range quiet.Suggestions {
+		if suggestion.Flags != advise.NoFlag {
+			flagged = true
+		}
+	}
+	if !flagged {
+		t.Errorf("ordinary flight lost its tuning suggestions: %+v", quiet.Suggestions)
+	}
+}
+
+func containsAny(values []string, want string) bool {
+	for _, value := range values {
+		if strings.Contains(value, want) {
+			return true
+		}
+	}
+	return false
+}
