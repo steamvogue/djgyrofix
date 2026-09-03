@@ -435,14 +435,24 @@ func writeNextSteps(w *errWriter, report Report) {
 	}
 
 	if advice.Verdict != advise.VerdictPatch {
-		writeAlternativeSteps(w, append(alternatives, retries...))
+		writeAlternativeSteps(w, advice.LeadStep, append(alternatives, retries...))
 		return
 	}
 
 	w.println("next:")
 	step := 1
+	// A lead step means a patch is not the first thing to do here, so it goes
+	// above the apply command rather than beside it.
+	if advice.LeadStep != "" && !report.Applied {
+		writeWrapped(w, fmt.Sprintf("  %d. %s", step, advice.LeadStep), "     ")
+		step++
+	}
 	if !report.Applied && advice.NextCommand != "" {
-		writeWrapped(w, fmt.Sprintf("  %d. Apply the planned correction:", step), "     ")
+		heading := "Apply the planned correction:"
+		if advice.LeadStep != "" {
+			heading = "If that leaves the listed times still twitching, apply the correction too:"
+		}
+		writeWrapped(w, fmt.Sprintf("  %d. %s", step, heading), "     ")
 		w.printf("     %s\n", advice.NextCommand)
 		for _, suggestion := range alternatives {
 			writeWrapped(w, fmt.Sprintf("     If %s, use %s instead — %s:",
@@ -500,12 +510,18 @@ func isPreApplyAlternative(flags string) bool {
 	return flags == "--no-bridge" || flags == "--profile conservative"
 }
 
-func writeAlternativeSteps(w *errWriter, suggestions []advise.Suggestion) {
-	if len(suggestions) == 0 {
+func writeAlternativeSteps(w *errWriter, leadStep string, suggestions []advise.Suggestion) {
+	if len(suggestions) == 0 && leadStep == "" {
 		return
 	}
 	w.println("next:")
+	offset := 0
+	if leadStep != "" {
+		writeWrapped(w, "  1. "+leadStep, "     ")
+		offset = 1
+	}
 	for index, suggestion := range suggestions {
+		index += offset
 		condition := suggestion.When
 		if condition == "" {
 			condition = "you choose this trade-off after reviewing the event list"

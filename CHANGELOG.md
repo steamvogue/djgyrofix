@@ -8,6 +8,11 @@ Notable changes to djgyrofix. The format follows
 
 ### Added
 
+- **A clip whose frames cannot carry its motion now leads with the low-pass, not
+  with a patch.** Offering the apply command first on footage a patch cannot fix
+  is how two real clips ended up corrected harder and harder against the wrong
+  cause. The step is set from the measurement rather than the verdict, so the
+  clip it matters most on — which comes back `upstream` — gets it too.
 - **Reports name the motion the frames cannot carry, and the cutoff that removes
   it.** Two clips reported as jerking after every correction turned out to carry
   16 and 23 °/s of rotation faster than half their frame rate. A frame sequence

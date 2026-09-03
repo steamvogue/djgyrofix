@@ -307,3 +307,47 @@ func containsAny(values []string, want string) bool {
 	}
 	return false
 }
+
+// TestLowPassLeadsWhenTheFramesCannotCarryTheMotion pins the ordering. A patch
+// offered first on footage a patch cannot fix is how somebody ends up correcting
+// harder and harder against the wrong cause, which is what happened on two real
+// clips before this existed.
+func TestLowPassLeadsWhenTheFramesCannotCarryTheMotion(t *testing.T) {
+	withMotion := func(aboveNyquist float64) advise.Input {
+		input := base()
+		input.Events = []detect.Event{smooth(1, 2, 9)}
+		input.AffectedSeconds, input.AffectedFraction = 1, 1.0/30
+		input.Kinetics = detect.Kinetics{
+			FrameNyquistHz: 30, AboveFrameNyquistDPS: aboveNyquist, FastDPS: detect.FastDPS,
+		}
+		return input
+	}
+
+	// Measured: 16.4 and 23.1 °/s on the clips that jerk, 6.1 on the one that
+	// does not.
+	loud := advise.Evaluate(withMotion(16.4))
+	if loud.LeadStep == "" {
+		t.Fatal("a clip carrying more motion than its frames can hold still leads with a patch")
+	}
+	for _, want := range []string{"low-pass", "30 Hz"} {
+		if !strings.Contains(loud.LeadStep, want) {
+			t.Errorf("lead step does not name %q: %s", want, loud.LeadStep)
+		}
+	}
+
+	if quiet := advise.Evaluate(withMotion(6.1)); quiet.LeadStep != "" {
+		t.Errorf("an ordinary clip was told to filter its gyro: %s", quiet.LeadStep)
+	}
+
+	// The verdict it arrives with is irrelevant: the frames cannot carry it
+	// whatever the metadata is doing. This is the case that was missed.
+	noisy := withMotion(64.7)
+	noisy.Noise = detect.NoiseProfile{P10: 100, P50: 116, P90: 122, NoisyDPS: 30, NoisyFraction: 1, NoisySeconds: 30}
+	upstream := advise.Evaluate(noisy)
+	if upstream.Verdict != advise.VerdictUpstream {
+		t.Fatalf("expected an upstream verdict, got %s", upstream.Verdict)
+	}
+	if upstream.LeadStep == "" {
+		t.Error("the upstream verdict dropped the low-pass step, which is the clip it matters most on")
+	}
+}

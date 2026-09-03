@@ -68,6 +68,12 @@ type Advice struct {
 	// while still giving the text report a safe, exact workflow.
 	PreviewFile   string `json:"preview_file,omitempty"`
 	RevertCommand string `json:"revert_command,omitempty"`
+	// LeadStep is an action that has to come before applying anything, set when
+	// something other than a patch is the larger problem on this clip. The
+	// report puts it first and demotes the apply command beneath it, because
+	// offering a patch first on footage a patch cannot fix is how somebody ends
+	// up correcting harder and harder against the wrong cause.
+	LeadStep string `json:"lead_step,omitempty"`
 }
 
 // Input is everything Evaluate reads. It is a plain struct rather than the
@@ -141,6 +147,19 @@ func Evaluate(in Input) Advice {
 	}
 
 	advice.Suggestions = append(advice.Suggestions, tuning(in, actionable, advice.Verdict)...)
+
+	// Set after the verdict rather than inside each one, because the frames
+	// cannot carry what they cannot carry whatever the metadata is doing. The
+	// clip this matters most on comes back upstream, and setting it per-verdict
+	// left exactly that case without it.
+	if unrepresentable(in) {
+		advice.LeadStep = fmt.Sprintf(
+			"Set your stabilizer's gyro low-pass to about %.0f Hz, then preview. On this clip that is "+
+				"the larger problem: %.0f °/s of the recorded motion is faster than your frames can "+
+				"carry, so correcting for it adds jitter rather than removing it, and no setting here "+
+				"reaches that.",
+			in.Kinetics.FrameNyquistHz, in.Kinetics.AboveFrameNyquistDPS)
+	}
 	return advice
 }
 
@@ -263,7 +282,7 @@ func kineticsDominate(in Input) bool {
 
 // clean is the answer that saves an evening: nothing here to patch.
 func clean(in Input) Advice {
-	return Advice{
+	advice := Advice{
 		Verdict:  VerdictClean,
 		Headline: "no correctable artifacts in the metadata",
 		Reasons: []string{
@@ -276,6 +295,7 @@ func clean(in Input) Advice {
 				"try Gyroflow's Complementary integration method or its low-pass filter",
 		}},
 	}
+	return advice
 }
 
 // tuning are the parameter steers that remain consistent with the verdict.

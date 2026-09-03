@@ -132,16 +132,30 @@ diagnosis: 4 correctable events over 1.49 s (4.98% of the clip) — this is what
   read the in-region figure as the result where correction was aimed; the
   clip-wide figure also includes the 95.0% of footage outside the
   correction regions
+  note: 343 °/s of the recorded motion is faster than the 15 Hz your frames
+        can represent, so stabilizing re-injects it as jitter; nothing here
+        reaches that, and a low-pass on the stabilizer's own gyro input at
+        about 15 Hz is what removes it
 next:
-  1. Apply the planned correction:
+  1. Set your stabilizer's gyro low-pass to about 15 Hz, then preview. On this
+     clip that is the larger problem: 343 °/s of the recorded motion is
+     faster than your frames can carry, so correcting for it adds jitter
+     rather than removing it, and no setting here reaches that.
+  2. If that leaves the listed times still twitching, apply the
+     correction too:
      djgyrofix fix --apply DJI_0042.MP4
      If you prefer to leave corrupt orientation samples untouched, use
        --no-bridge instead — bridging is the only step that reconstructs
        orientation instead of smoothing existing samples:
        djgyrofix fix --apply --no-bridge DJI_0042.MP4
-  2. Preview DJI_0042.MP4 in Gyroflow at the listed times.
+  3. Preview DJI_0042.MP4 in Gyroflow at the listed times.
      If stabilization is smooth, stop — you are done.
 ```
+
+That clip is a synthetic fixture whose injected vibration is far heavier than
+real footage — 343 °/s above the frame rate against 16 to 65 on measured clips —
+which is why it leads with the low-pass. A real scan leads with the apply command
+unless your footage genuinely carries more motion than its frames can hold.
 
 Four kinds of event, and only one of them gets reconstructed:
 

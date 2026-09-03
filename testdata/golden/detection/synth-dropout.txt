@@ -13,5 +13,6 @@ run-repair 1 runs interpolated (1 quaternions)  0 too long  0 motion-like
 writes     76 quaternions in 19 samples
 residual   97.1% reduced in region  0.9% clip-wide
 verdict    patch
+leads with low-pass
 suggests   (note)
 suggests   --no-bridge

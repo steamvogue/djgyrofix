@@ -275,6 +275,9 @@ func renderDetection(rep report.Report) string {
 	}
 	if rep.Advice != nil {
 		fmt.Fprintf(&out, "verdict    %s\n", rep.Advice.Verdict)
+		if rep.Advice.LeadStep != "" {
+			fmt.Fprintf(&out, "leads with low-pass\n")
+		}
 		for _, suggestion := range rep.Advice.Suggestions {
 			// The flags are the decision; the prose behind them is presentation,
 			// covered by advise's own tests. Pinning the wording here would churn

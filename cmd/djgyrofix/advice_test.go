@@ -220,7 +220,10 @@ func TestTextReportRendersTheDiagnosis(t *testing.T) {
 		t.Fatal(err)
 	}
 	output := buffer.String()
-	for _, want := range []string{"diagnosis:", "next:", "Apply the planned correction:", "djgyrofix fix --apply", "Preview"} {
+	// The apply command and the preview step are the invariants. The heading
+	// above the apply step is not: a clip carrying motion its frames cannot hold
+	// leads with the low-pass instead and demotes the patch beneath it.
+	for _, want := range []string{"diagnosis:", "next:", "djgyrofix fix --apply", "Preview"} {
 		if !strings.Contains(output, want) {
 			t.Errorf("the text report omits %q\n%s", want, output)
 		}

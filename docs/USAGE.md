@@ -224,6 +224,15 @@ Work down this ladder, but start with the video rather than the detector count.
 The text report now prints this workflow with commands that preserve the flags
 from the scan or dry run.
 
+**0. Check the low-pass first, if the scan told you to.** When a report opens its
+next steps with a gyro low-pass, that is because more of the recorded motion is
+faster than your frames can represent than they can hold — and stabilizing
+re-injects it as jitter instead of removing it. Nothing in this tool reaches that:
+every correction here is event-based and this energy is spread across the whole
+clip. In Gyroflow it is the **low-pass filter**, which is a different setting from
+smoothing: smoothing shapes the target camera path, the low-pass filters the
+source gyro data, and it is the source carrying what the frames cannot hold.
+
 **1. Preview the stabilized result.** Check the listed event times in Gyroflow.
 If they are smooth, stop. “N of M corrected regions still trip the detector” is
 not a count of defects left in your video. Measured across one to eight

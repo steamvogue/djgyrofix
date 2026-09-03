@@ -88,6 +88,7 @@ run-repair 358 runs interpolated (3684 quaternions)  0 too long  2 motion-like
 writes     4920 quaternions in 244 samples
 residual   41.0% reduced in region  5.5% clip-wide
 verdict    patch
+leads with low-pass
 suggests   (note)
 suggests   (note)
 warning    23 of 39 corrected region(s) still trip the detector after 3 bounded pass(es); that is where the bounded correction settles, not a count of defects left in the video

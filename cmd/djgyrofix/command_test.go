@@ -47,7 +47,7 @@ func TestScanCommandReportsWithoutWriting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("scan: %v", err)
 	}
-	for _, want := range []string{"wm169", "jitter", "dropout", "Apply the planned correction", "Preview", "--no-bridge"} {
+	for _, want := range []string{"wm169", "jitter", "dropout", "djgyrofix fix --apply", "Preview", "--no-bridge"} {
 		if !strings.Contains(output, want) {
 			t.Errorf("scan output is missing %q\n%s", want, output)
 		}
