@@ -112,8 +112,15 @@ jobs:
       # Both parsers walk length fields taken straight from the file, so a
       # short fuzz run on every change is cheap insurance against a panic or an
       # unbounded allocation on a corrupt clip.
-      - run: go test -run xxx -fuzz FuzzParseTracks -fuzztime 90s ./internal/mp4/
-      - run: go test -run xxx -fuzz FuzzQuaternions -fuzztime 90s ./internal/djiproto/
+      #
+      # -parallel is held below the runner's core count on purpose. Go starts one
+      # fuzz worker per GOMAXPROCS and the coordinator has to ping each of them;
+      # with every core busy fuzzing, a worker can miss that ping and the run
+      # fails with "context deadline exceeded" having found nothing. That is a
+      # starved runner, not a defect in the parser, and it is indistinguishable
+      # in the log from a real hang — so leave the coordinator room to breathe.
+      - run: go test -run xxx -fuzz FuzzParseTracks -fuzztime 90s -parallel 2 ./internal/mp4/
+      - run: go test -run xxx -fuzz FuzzQuaternions -fuzztime 90s -parallel 2 ./internal/djiproto/
 
   parity:
     name: golden parity against the Python reference
