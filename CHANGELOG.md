@@ -6,6 +6,8 @@ Notable changes to djgyrofix. The format follows
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-09-03
+
 ### Changed
 
 - **DESIGN §13.2 is answered: there is no sub-sample timing in DJI's schema.**
@@ -573,7 +575,8 @@ byte-for-byte output parity against it in manual-range mode.
 - Writing a full copy of the video for every edit. `--out` keeps that behaviour
   where it is wanted.
 
-[Unreleased]: https://github.com/steamvogue/djgyrofix/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/steamvogue/djgyrofix/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/steamvogue/djgyrofix/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/steamvogue/djgyrofix/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/steamvogue/djgyrofix/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/steamvogue/djgyrofix/compare/v0.8.1...v0.9.0
