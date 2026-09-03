@@ -328,3 +328,70 @@ func TestLegacyRejectsBadParameters(t *testing.T) {
 		t.Errorf("an empty series should give an empty result, got %v, %v", got, err)
 	}
 }
+
+// TestCorrectionNeverIntroducesALargerStep is a whole-clip invariant rather than
+// an edge check, and it exists because the residual score cannot see the failure
+// it guards against.
+//
+// Measured on real footage, freezing orientation at the last good sample for the
+// length of each event scores *better* than every shipped method — 10.4%
+// clip-wide and 100.0% in-region against the blur's 6.6% and 95.9% — while
+// introducing a 156.8° instantaneous jump. The metric is blind to it twice over:
+// a frozen orientation has no angular acceleration inside the region, and the
+// step it causes lands on the boundary. A correction can therefore score
+// perfectly and destroy the footage.
+//
+// So continuity is asserted separately from quality. Any method that removes an
+// excursion by holding, clamping or truncating rather than by rejoining will
+// fail here no matter how well it scores.
+func TestCorrectionNeverIntroducesALargerStep(t *testing.T) {
+	defects := []synth.Defect{
+		synth.DefectJitter, synth.DefectImpact, synth.DefectDropout,
+		synth.DefectVectorJitter, synth.DefectMixed,
+	}
+	for _, defect := range defects {
+		t.Run(string(defect), func(t *testing.T) {
+			times, values := series(defect)
+			result := detected(t, times, values)
+			for _, mode := range []struct {
+				name       string
+				repairRuns bool
+			}{{"blur", false}, {"runs", true}} {
+				options := correct.EnvelopeOptions{Strength: 1, RepairRuns: mode.repairRuns}
+				if mode.repairRuns {
+					options.Repair = correct.DefaultRepairOptions()
+					options.Stats = &correct.RepairStats{}
+				}
+				output, err := correct.Envelope(times, values, result, options)
+				if err != nil {
+					t.Fatalf("%s: %v", mode.name, err)
+				}
+				sourceStep, sourceAt := largestStep(values)
+				patchedStep, patchedAt := largestStep(output)
+				if patchedStep > sourceStep+1e-9 {
+					t.Errorf("%s: largest step grew from %.4f° at sample %d to %.4f° at sample %d — "+
+						"a correction may reduce motion, never manufacture it",
+						mode.name, sourceStep, sourceAt, patchedStep, patchedAt)
+				}
+			}
+		})
+	}
+}
+
+// largestStep returns the biggest single-sample orientation change in degrees
+// and where it happens.
+func largestStep(track []quat.Q) (float64, int) {
+	worst, at := 0.0, 0
+	for index := 1; index < len(track); index++ {
+		a, errA := quat.Normalize(track[index-1])
+		b, errB := quat.Normalize(track[index])
+		if errA != nil || errB != nil {
+			continue
+		}
+		dot := math.Min(1, math.Abs(quat.Dot(a, b)))
+		if step := 2 * math.Acos(dot) * 180 / math.Pi; step > worst {
+			worst, at = step, index
+		}
+	}
+	return worst, at
+}

@@ -6,6 +6,16 @@ Notable changes to djgyrofix. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Correction is now held to a continuity invariant separate from its score.**
+  Measured on real events, freezing orientation through each one scores better
+  than every shipped method on both residual figures while introducing a 156.8°
+  instantaneous jump — the metric cannot see it, because a frozen orientation has
+  no angular acceleration and the step lands on the region boundary.
+  `TestCorrectionNeverIntroducesALargerStep` asserts that no correction
+  manufactures motion the source did not have. See FINDINGS.
+
 ## [0.12.0] — 2026-09-03
 
 ### Added

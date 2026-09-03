@@ -586,6 +586,85 @@ Reporting the dominant frequencies alongside an `upstream` verdict would make it
 a much better diagnostic. It is not implemented; one clip is not enough to
 choose thresholds for it.
 
+## Cutting a spike instead of smoothing it
+
+The reasonable intuition about a transient is that it should be *removed*, not
+attenuated: the excursion is not real, so cut it back rather than filter it. Four
+ways to do that were measured against the same 81 real events, scored on the
+angular-acceleration residual and on the largest single-sample orientation step
+each one leaves behind.
+
+| method | clip residual | in-region | largest step |
+|---|---|---|---|
+| unchanged | — | — | 1.85° |
+| blur (legacy) | 6.6% | 95.9% | 0.86° |
+| slerp runs (shipped default) | 4.4% | 75.3% | 0.86° |
+| **hold at last good value** | **10.4%** | **100.0%** | **156.80°** |
+| limit deviation to 0.05° | −84.7% | 87.3% | 0.52° |
+| limit deviation to 0.10° | −29.1% | 84.1% | 0.61° |
+| limit deviation to 0.20° | −5.3% | 78.4% | 0.81° |
+| limit deviation to 0.50° | +0.7% | 64.8% | 0.85° |
+
+### The hold result is a hole in the metric, not a discovery
+
+Freezing orientation at the last good sample scores better than every shipped
+method on both figures — the only 100% in-region result there has ever been —
+while introducing a **156.8° instantaneous jump**. The events are transients
+superimposed on real flight, and the flight does not pause for them: holding for
+up to 1.1 s while the aircraft genuinely rotates, then resuming, produces exactly
+that step.
+
+The residual metric cannot see it. A frozen orientation has no angular
+acceleration inside the region, which is what the in-region figure measures, and
+the step lands on the boundary. **A correction can therefore score perfectly and
+destroy the footage.** That is a property of the harness rather than of this
+idea, and it would have blessed any future method with the same shape, so
+continuity is now asserted separately from quality by
+`TestCorrectionNeverIntroducesALargerStep`.
+
+### Clipping generates the thing it is trying to remove
+
+The limiter is the more careful version of the intuition: below the cap it is the
+identity, above it the excursion is truncated back along the arc to the trend, so
+unlike a hold it cannot leave a step. It still makes the clip-wide residual
+*worse*, monotonically with how hard it clips — −84.7% at a 0.05° cap.
+
+The reason is structural. Clipping is nonlinear: it puts a corner in the
+orientation path wherever the signal crosses the cap. Angular acceleration is the
+second derivative, so a corner is an impulse, in the same way that clipping a
+waveform generates harmonics. The defect being removed *is* a derivative
+discontinuity, and truncation manufactures more of them. A soft knee avoids the
+corner, but a soft-knee limiter with a high enough ratio is a filter — which is
+what the blur already is.
+
+### There is no headroom in cutting more, either
+
+Raising the longest run that run-repair may replace, which is the same intuition
+expressed inside the architecture that cannot leave a step:
+
+| cap | runs interpolated | too long | in-region |
+|---|---|---|---|
+| 30 ms (shipped) | 1152 | 3 | 75.3% |
+| 60 ms | 1154 | 1 | 75.1% |
+| 120 ms | 1155 | 0 | 75.2% |
+| 250 ms | 1155 | 0 | 75.2% |
+
+Three runs in the whole clip were ever refused for length. The cap is not what
+limits the result, and the residual that survives is not spike-shaped: located
+earlier in this document, it sits as often in the middle of a corrected region as
+at its edges. Cutting is the wrong instrument for a residual that is distributed.
+
+### One result that is not about cutting
+
+The blur scores better than the shipped default here — 95.9% against 75.3%
+in-region, 6.6% against 4.4% clip-wide — on the clip the default was chosen for.
+That is not on its own an argument for changing back. Run-repair replaces only
+the samples that are out of trend where the blur smooths whole events including
+the genuine motion inside them, and neither the residual metric nor anything else
+here measures the motion a correction wrongly removed. It is recorded because it
+is a real number pointing the other way from a decision already taken, and
+because the labelled corpus is what would settle it.
+
 ## Scope of the evidence
 
 This is three real clips — two O4 air units and one Osmo — plus generated
