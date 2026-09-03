@@ -193,7 +193,7 @@ With Go 1.25 or later:
 go install github.com/steamvogue/djgyrofix/cmd/djgyrofix@latest
 ```
 
-From source: `git clone`, then `make` (fmt, vet, test, build).
+From source: `git clone`, then `make` (gofmt, vet, golangci-lint, test, build).
 
 Every push to `main` also publishes fresh Windows builds on the
 [Main branch builds](https://github.com/steamvogue/djgyrofix/actions/workflows/development-build.yml)
