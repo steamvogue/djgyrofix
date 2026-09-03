@@ -595,10 +595,68 @@ Gyroflow's own `--export-metadata` output on a known-good file.
 **Status: not implemented.** That verification never happened, and shipping an
 unverified guess would be worse than shipping nothing.
 
+### Tier 3, revisited: buildable, and declined
+
+The verification the plan asked for has now happened, and it settles the
+question the other way.
+
+The format is [fully specified][gcsv]: `tscale` x raw gives seconds, `gscale` x
+raw gives **rad/s**, the orientation string is documented with a figure, and
+floating point is explicitly allowed — so the fixed-point complexity that made
+this look expensive is optional. It could be built.
+
+It should not be. Gyroflow's `GyroSource` holds `quaternions: TimeQuat` and its
+parser reads DJI's fused attitude **directly** from the same field this tool
+patches. A `.gcsv` carries angular rate only — `t,gx,gy,gz` with optional accel
+and magnetometer, and no quaternion column exists in the format. Exporting one
+would therefore force a differentiate-then-reintegrate round trip through
+Gyroflow's own fusion, adding drift the in-place patch does not have. It would
+be a fidelity downgrade sold as the safest mode, and the safety it offers is
+already covered by `--out` and the journal.
+
+This stays unimplemented as a decision rather than as an omission.
+
+[gcsv]: https://docs.gyroflow.xyz/app/technical-details/gcsv-format
+
 ### Not recommended
 
 Generating `.gyroflow` project JSON directly. The format is internal and
 versioned; you'd be chasing upstream changes for no benefit over Tier 1.
+
+Rolling-shutter readout measurement. The `.gcsv` metadata block has a
+`frame_readout_time` field and the README points at Gyroflow's rolling-shutter
+correction, but the readout time is not in the attitude track and nothing here
+can measure it.
+
+### What the diagnosis could still become
+
+The community's blocker on the O4 fault is not repair, it is attribution. The
+most evidence-disciplined public account of it puts the problem plainly: the
+examples "stop short of the useful bit: raw footage with gyro traces. Without
+that, nobody can say with confidence whether the fault sits in the sensor, DJI's
+firmware, or in the way Gyroflow is parsing the data."
+
+This tool reads those traces, so the work below is about making what it already
+measures answer that question.
+
+1. **Camera and firmware on every report — done.** The stream names its model,
+   firmware and schema, and reports now carry all three so two of them can be
+   compared. The serial is read but withheld by default.
+2. **Layout from the declared schema — done.** See §5 and the changelog; the
+   previous substring heuristic matched none of the three real clips.
+3. **Dominant frequencies beside an `upstream` verdict — not built.** `upstream`
+   reports one number, the noise floor, and gives one remedy. It cannot separate
+   a mount resonance from a genuinely noisy sensor, and those have different
+   fixes. Two windowed DFTs over the roughest and quietest windows separated the
+   Osmo clip's roughness into a 9 Hz component and a 450-480 Hz band, which is
+   something a pilot can act on where "your noise floor is 113.7 deg/s" is not.
+   Thresholds for saying so automatically need more than one clip.
+4. **Sequence-counter gaps in `scan`, not only `info`.** A dropped metadata
+   sample is a detection-relevant fact and §9.6's counter identifies one
+   directly.
+5. **A watch folder**, to pair with Gyroflow's own, per Tier 1.
+6. **A `compare` command** for two settings over one clip. The journals in
+   `testdata/` are that workflow done by hand.
 
 
 ## 11. Milestones

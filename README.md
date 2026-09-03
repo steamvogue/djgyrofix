@@ -233,6 +233,23 @@ If you want a GUI, or you are on Windows or macOS and would rather not touch a
 terminal, [use Minsu Kim's tool][upstream] — it is signed, notarized, and does
 the same core job.
 
+## Reporting a suspect unit
+
+The open question about the O4 stabilization fault is *which* units and *which*
+firmware are affected, and it is stuck because public reports carry footage but
+not the gyro trace or the camera behind it. A scan carries both:
+
+```bash
+djgyrofix scan --format json DJI_0042.MP4 > scan.json
+```
+
+The report names the camera model, its firmware and the metadata schema
+alongside the measured noise floor and every event found, which is what makes
+two reports comparable. **Your serial number is not in it** — that identifies
+your individual unit rather than the model and firmware a comparison turns on.
+If you do need it, `djgyrofix info --serial` prints it and you can decide who
+sees it.
+
 ## Gyroflow has glitch filtering now — do you still need this?
 
 Sometimes not. Gyroflow's nightly builds added a glitch filter with a strength
@@ -268,10 +285,13 @@ how that was found are written down rather than glossed:
 - [Measured findings](docs/FINDINGS.md) — real-footage results and the mistakes
 - [Design notes](docs/DESIGN.md) — architecture, invariants, validation
 
-Known limits worth stating plainly: variant sniffing is a heuristic that will
-eventually guess wrong on some camera; sub-sample timing is interpolated because
-no per-quaternion timestamp is known in the DJI schema; and the diagnosis rests
-on a small number of real measurements, so if it calls your footage an airframe
+Known limits worth stating plainly: the layout is chosen from the schema name
+the stream declares, and a camera whose schema nobody has seen falls back to a
+default that `info` marks as **not recognised** rather than as a match;
+sub-sample timing is interpolated because the DJI schema carries no
+per-quaternion timestamp — every one of 1.4 million quaternion messages across
+three cameras holds four numbers and nothing else; and the diagnosis rests on a
+small number of real measurements, so if it calls your footage an airframe
 problem and you disagree, that's worth an issue.
 
 One report line deserves its own warning. `N region(s) remain detectable after

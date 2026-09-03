@@ -215,6 +215,14 @@ func lineAt(lines []string, index int) string {
 func renderDetection(rep report.Report) string {
 	var out strings.Builder
 
+	// Pinned so the identity reading is held to the real streams too: the field
+	// numbers behind it were read off three cameras and are not guaranteed
+	// beyond them.
+	if camera := rep.Camera; camera != nil {
+		fmt.Fprintf(&out, "camera     %s  fw %s  %s  %s\n",
+			orNone(camera.Model), orNone(camera.Firmware),
+			orNone(camera.Aircraft), orNone(camera.Schema))
+	}
 	fmt.Fprintf(&out, "clip       %.3f s  %d samples  %d quaternions @ %.1f Hz  duplicates %.1f%%\n",
 		rep.DurationSeconds, rep.SampleCount, rep.QuaternionCount, rep.SampleRate, rep.DuplicateShare*100)
 	baseline := "global"
@@ -285,4 +293,11 @@ func actionable(events []detect.Event) int {
 		}
 	}
 	return count
+}
+
+func orNone(value string) string {
+	if value == "" {
+		return "-"
+	}
+	return value
 }

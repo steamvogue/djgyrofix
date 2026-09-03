@@ -22,7 +22,7 @@ var (
 	safetyFlagNames     = []string{"dry-run", "apply", "backup", "out", "force", "max-affected"}
 	outputFlagNames     = []string{"variant", "jobs", "format"}
 	revertFlagNames     = []string{"keep-journal", "force"}
-	infoFlagNames       = []string{"variant", "all-variants"}
+	infoFlagNames       = []string{"variant", "all-variants", "serial"}
 )
 
 // flagGroup is one titled block of flags in a help listing.

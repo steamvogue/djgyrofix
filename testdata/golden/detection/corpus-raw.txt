@@ -1,3 +1,4 @@
+camera     DJI O4  fw 01.00.04.00  DJI FC8770  dvtm_O4.proto
 clip       497.263 s  29806 samples  993523 quaternions @ 1978.0 Hz  duplicates 50.0%
 baseline   3.4 dps  threshold 60.0 dps (rolling)
 noise      p10 2.6  p50 3.4  p90 4.3 dps  noisy 0.0% (0.00 s) at >= 45.0 dps

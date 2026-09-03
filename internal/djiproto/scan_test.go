@@ -143,21 +143,77 @@ func TestVariantPathsAreDistinct(t *testing.T) {
 }
 
 func TestDetectVariantSniffsTheModelString(t *testing.T) {
-	cases := map[string]djiproto.Variant{
-		"oq101": djiproto.VariantOQ101,
-		"wa530": djiproto.VariantWA530,
-		"other": djiproto.VariantWM169, // wm169 is the fallback, not a match
+	cases := map[string]struct {
+		want       djiproto.Variant
+		recognised bool
+	}{
+		"oq101": {djiproto.VariantOQ101, true},
+		"wa530": {djiproto.VariantWA530, true},
+		"wm169": {djiproto.VariantWM169, true},
+		// wm169 is also the fallback, so an unrecognised stream lands on the
+		// same variant while reporting that it was not recognised.
+		"other": {djiproto.VariantWM169, false},
 	}
 	for marker, want := range cases {
 		samples := [][]byte{[]byte("junk" + marker + "junk")}
-		if got := djiproto.DetectVariant(samples); got != want {
-			t.Errorf("DetectVariant(%q) = %q, want %q", marker, got, want)
+		got, recognised := djiproto.DetectVariant(samples)
+		if got != want.want || recognised != want.recognised {
+			t.Errorf("DetectVariant(%q) = %q/%v, want %q/%v",
+				marker, got, recognised, want.want, want.recognised)
 		}
 	}
 	// Only the first kilobyte of the first five samples is probed.
 	padded := append(make([]byte, 2000), []byte("oq101")...)
-	if got := djiproto.DetectVariant([][]byte{padded}); got != djiproto.VariantWM169 {
-		t.Errorf("DetectVariant looked past the first kilobyte, got %q", got)
+	if got, recognised := djiproto.DetectVariant([][]byte{padded}); got != djiproto.VariantWM169 || recognised {
+		t.Errorf("DetectVariant looked past the first kilobyte, got %q/%v", got, recognised)
+	}
+}
+
+// TestSchemaNameOutranksTheSubstringProbe pins the signal order. DJI names its
+// own protobuf definition in the stream, which is a statement rather than a
+// guess, and no real clip measured here carries the substrings the older probe
+// looks for — all three would otherwise have reached the default by luck.
+func TestSchemaNameOutranksTheSubstringProbe(t *testing.T) {
+	// A sample whose schema says one thing and whose bytes contain the marker
+	// for another. The schema wins.
+	sample := schemaSample(t, "dvtm_O4P.proto", "wa530 appears in the payload")
+	got, recognised := djiproto.DetectVariant([][]byte{sample})
+	if got != djiproto.VariantWM169 || !recognised {
+		t.Errorf("schema name lost to the substring probe: %q/%v", got, recognised)
+	}
+
+	unknown := schemaSample(t, "dvtm_future9.proto", "nothing familiar here")
+	if got, recognised := djiproto.DetectVariant([][]byte{unknown}); recognised {
+		t.Errorf("an unknown schema was reported as recognised: %q", got)
+	}
+}
+
+// schemaSample builds a sample carrying a schema name at 1.1.1 plus a trailer
+// in an unrelated field, without depending on the synth fixture builder. The
+// trailer goes inside field 15 rather than after the message, because a real
+// sample is well-formed protobuf from end to end and a scanner that has to
+// tolerate trailing garbage would be testing something DJI never produces.
+func schemaSample(t *testing.T, schema, trailer string) []byte {
+	t.Helper()
+	inner := append([]byte{0x0A, byte(len(schema))}, schema...)
+	middle := append([]byte{0x0A, byte(len(inner))}, inner...)
+	outer := append([]byte{0x0A, byte(len(middle))}, middle...)
+	marker := append([]byte{0x7A, byte(len(trailer))}, trailer...)
+	return append(outer, marker...)
+}
+
+func TestReadIdentity(t *testing.T) {
+	sample := schemaSample(t, "dvtm_O4P.proto", "")
+	identity := djiproto.ReadIdentity(sample)
+	if identity.Schema != "dvtm_O4P.proto" {
+		t.Errorf("schema = %q", identity.Schema)
+	}
+	// Absent fields stay empty rather than being guessed at.
+	if identity.Model != "" || identity.Firmware != "" || identity.Serial != "" {
+		t.Errorf("absent fields were invented: %+v", identity)
+	}
+	if identity := djiproto.ReadIdentity([]byte{0xFF, 0xFF}); identity.Schema != "" {
+		t.Errorf("malformed input produced an identity: %+v", identity)
 	}
 }
 

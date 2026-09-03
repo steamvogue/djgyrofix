@@ -20,6 +20,7 @@ func runInfo(args []string) error {
 	flags := flag.NewFlagSet("info", flag.ExitOnError)
 	variantFlag := flags.String("variant", "auto", "metadata layout: wm169 | wa530 | oq101 | auto")
 	all := flags.Bool("all-variants", false, "report what every variant path would find")
+	serial := flags.Bool("serial", false, "include the camera serial number, which identifies your unit")
 	flags.Usage = commandUsage(flags,
 		"inspect a file",
 		"djgyrofix info [flags] <file...>",
@@ -56,14 +57,14 @@ each other path would have found.`,
 		if index > 0 {
 			fmt.Println()
 		}
-		if err := infoOne(path, override, *all); err != nil {
+		if err := infoOne(path, override, *all, *serial); err != nil {
 			failures = append(failures, err)
 		}
 	}
 	return summarize(failures)
 }
 
-func infoOne(path string, override djiproto.Variant, allVariants bool) error {
+func infoOne(path string, override djiproto.Variant, allVariants, showSerial bool) error {
 	source, err := pipeline.Open(path, override)
 	if err != nil {
 		return fmt.Errorf("%s: %w", path, err)
@@ -92,14 +93,43 @@ func infoOne(path string, override djiproto.Variant, allVariants bool) error {
 			track.SampleCount(), track.Timescale, track.DurationSeconds())
 	}
 
+	// What the stream says it is. Printed before the variant because the schema
+	// name is what the variant is now chosen from, and because model plus
+	// firmware are the axes any comparison between units has to be made on.
+	identity := source.Identity
+	if identity.Model != "" || identity.Schema != "" {
+		fmt.Printf("\n  camera:    %s", orDash(identity.Model))
+		if identity.Schema != "" {
+			fmt.Printf("  (%s)", identity.Schema)
+		}
+		fmt.Println()
+		if identity.Firmware != "" {
+			fmt.Printf("  firmware:  %s\n", identity.Firmware)
+		}
+		if identity.Aircraft != "" {
+			fmt.Printf("  aircraft:  %s\n", identity.Aircraft)
+		}
+		if showSerial && identity.Serial != "" {
+			fmt.Printf("  serial:    %s\n", identity.Serial)
+		}
+	}
+
 	path4, _ := source.Variant.Path()
 	fmt.Printf("\n  variant:   %s", source.Variant)
-	if source.Variant != source.VariantDetected {
+	switch {
+	case source.Variant != source.VariantDetected:
 		fmt.Printf("  (forced; sniffing said %s)", source.VariantDetected)
-	} else {
-		fmt.Printf("  (sniffed)")
+	case source.VariantRecognised:
+		fmt.Printf("  (recognised)")
+	default:
+		fmt.Printf("  (NOT recognised — this is the default, not a match)")
 	}
 	fmt.Printf("\n  field path: %s\n", joinInts(path4, "."))
+	if !source.VariantRecognised && source.Variant == source.VariantDetected {
+		fmt.Printf("  nothing in this stream names a layout djgyrofix knows. The quaternion\n" +
+			"  count above is the only evidence the path is right; if it looks wrong,\n" +
+			"  try --all-variants and --variant.\n")
+	}
 
 	points, err := source.ReadAll()
 	if err != nil {

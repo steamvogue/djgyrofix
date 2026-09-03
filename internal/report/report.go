@@ -17,6 +17,7 @@ import (
 	"github.com/steamvogue/djgyrofix/internal/advise"
 	"github.com/steamvogue/djgyrofix/internal/correct"
 	"github.com/steamvogue/djgyrofix/internal/detect"
+	"github.com/steamvogue/djgyrofix/internal/djiproto"
 )
 
 // Report is everything one file's scan or fix produced.
@@ -25,10 +26,13 @@ type Report struct {
 	// set by the CLI after analysis, which is shared by scan and fix.
 	Operation string `json:"operation,omitempty"`
 
-	File            string `json:"file"`
-	Variant         string `json:"variant"`
-	VariantDetected string `json:"variant_detected"`
-	VariantOverride bool   `json:"variant_override"`
+	File string `json:"file"`
+	// Camera is what the stream says about the device that wrote it, minus the
+	// serial. Correlating one report against another needs it.
+	Camera          *djiproto.Identity `json:"camera,omitempty"`
+	Variant         string             `json:"variant"`
+	VariantDetected string             `json:"variant_detected"`
+	VariantOverride bool               `json:"variant_override"`
 
 	DurationSeconds float64 `json:"duration_seconds"`
 	SampleCount     int     `json:"sample_count"`
@@ -226,13 +230,33 @@ func writeTextOne(w *errWriter, report Report) {
 	}
 	w.println()
 
+	// Which camera and firmware wrote this. It is here so a report pasted into
+	// a bug thread is comparable with another one: the open question about the
+	// O4 fault is which units and which firmware are affected, and a trace with
+	// no camera attached cannot answer it. The serial is deliberately not among
+	// these — it identifies the owner's unit, and `info --serial` is where
+	// somebody who wants it can ask.
+	if camera := report.Camera; camera != nil && (camera.Model != "" || camera.Schema != "") {
+		w.printf("camera %s", orDashText(camera.Model))
+		if camera.Firmware != "" {
+			w.printf("  firmware %s", camera.Firmware)
+		}
+		if camera.Aircraft != "" {
+			w.printf("  on %s", camera.Aircraft)
+		}
+		if camera.Schema != "" {
+			w.printf("  (%s)", camera.Schema)
+		}
+		w.println()
+	}
+
 	scope := "rolling"
 	if !report.RollingBaseline {
 		scope = "global"
 	}
 	w.printf("baseline %.1f °/s   threshold %.1f °/s (%s)\n",
 		report.BaselineDPS, report.ThresholdDPS, scope)
-	if report.DuplicateShare >= 0.4 && report.SampleRate > 0 {
+	if report.DuplicateShare >= detect.StructuralDuplicateShare && report.SampleRate > 0 {
 		w.printf("stored rate is %.0f%% duplicate pairs — %.1f Hz of information\n",
 			report.DuplicateShare*100, report.SampleRate*(1-report.DuplicateShare))
 	}
@@ -697,4 +721,11 @@ func Ranges(events []detect.Event) string {
 		parts = append(parts, fmt.Sprintf("%.3f-%.3f", event.StartSeconds, event.EndSeconds))
 	}
 	return strings.Join(parts, ",")
+}
+
+func orDashText(value string) string {
+	if value == "" {
+		return "-"
+	}
+	return value
 }

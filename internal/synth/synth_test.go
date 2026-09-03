@@ -61,8 +61,9 @@ func TestSyntheticFileParsesBackToWhatWasBuilt(t *testing.T) {
 					start := built.SampleOffsets[index]
 					first = append(first, built.Bytes[start:start+built.SampleSizes[index]])
 				}
-				if got := djiproto.DetectVariant(first); got != variant {
-					t.Errorf("DetectVariant = %q, want %q", got, variant)
+				got, recognised := djiproto.DetectVariant(first)
+				if got != variant || !recognised {
+					t.Errorf("DetectVariant = %q/%v, want %q/true", got, recognised, variant)
 				}
 
 				// Every quaternion offset the scanner reports must be the one

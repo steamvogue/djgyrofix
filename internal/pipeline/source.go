@@ -35,7 +35,13 @@ type Source struct {
 	Variant djiproto.Variant
 	// VariantDetected is what sniffing guessed, even when overridden.
 	VariantDetected djiproto.Variant
-	file            *os.File
+	// VariantRecognised is false when sniffing reached the default without
+	// recognising the stream, which is worth saying out loud on a camera nobody
+	// has tested.
+	VariantRecognised bool
+	// Identity is what the stream says about the camera that wrote it.
+	Identity djiproto.Identity
+	file     *os.File
 }
 
 // Open parses the container and locates the metadata track. Pass an empty
@@ -80,8 +86,11 @@ func Open(path string, override djiproto.Variant) (*Source, error) {
 		}
 		probe = append(probe, sample)
 	}
-	source.VariantDetected = djiproto.DetectVariant(probe)
+	source.VariantDetected, source.VariantRecognised = djiproto.DetectVariant(probe)
 	source.Variant = source.VariantDetected
+	if len(probe) > 0 {
+		source.Identity = djiproto.ReadIdentity(probe[0])
+	}
 	if override != "" {
 		if _, ok := override.Path(); !ok {
 			file.Close()

@@ -147,7 +147,13 @@ const nearMissSeverity = 1.5
 // model rather than from a measurement, and is deliberately far from both ends
 // of it. A genuine frozen dropout is two samples in a million, six orders of
 // magnitude below this; the smallest real padding is 0.37, more than twice it.
-const structuralDuplicateShare = 0.15
+const structuralDuplicateShare = StructuralDuplicateShare
+
+// StructuralDuplicateShare is exported so the report can describe the same
+// stream the detector collapsed. Two copies of this number drift apart the
+// moment one of them is tuned, which is exactly what happened when the value
+// moved from 0.4 and the report kept describing the old boundary.
+const StructuralDuplicateShare = 0.15
 
 // duplicatePairShare is the fraction of quaternions identical to the one before
 // them.

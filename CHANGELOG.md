@@ -6,6 +6,34 @@ Notable changes to djgyrofix. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Reports name the camera, its firmware and the metadata schema.** The open
+  question about the O4 fault is which units and which firmware are affected,
+  and it is stuck because public reports carry footage but not the trace or the
+  camera behind it. `scan` and `fix` now print and serialise all three, so two
+  reports can be compared. The serial number is deliberately excluded — it
+  identifies an individual unit — and `info --serial` is where somebody who
+  wants it asks.
+- **`info` prints the camera, firmware, airframe and schema**, and says when the
+  metadata layout was **not recognised** rather than letting a fallback look
+  like a match.
+- **`info` reports how much of the stored rate is padding**, and the information
+  rate it implies. This is where a new camera or frame rate shows itself.
+- **An Osmo clip joins the pinned detection tables.** It needed no new support —
+  a `CAM meta` handler reaching the same `wm169` path — and it is the first
+  measured clip to come back `upstream`, so that verdict is now pinned against
+  real footage rather than a synthetic noise floor. See FINDINGS.
+
+### Changed
+
+- **The metadata layout is now chosen from the schema DJI declares.** The stream
+  names its own protobuf definition — `dvtm_O4P.proto` and so on — which is a
+  statement rather than a guess. The previous heuristic grepped the samples for
+  product-code substrings and matched **none of the three real clips measured**;
+  all of them reached the default by luck. The substring probe is still tried
+  beneath the schema name, and an unrecognised stream is now reported as such.
+
 ### Fixed
 
 - **Oversampling went undetected at 48 and 50 fps.** The padding DJI applies is
@@ -16,15 +44,10 @@ Notable changes to djgyrofix. The format follows
   Either would have been differenced into a square wave at Nyquist, the failure
   that once lifted a measured noise floor from 3.4 to 37.9 °/s. Now 0.15. No
   detection table moved, so nothing measured here changes.
-
-### Added
-
-- **`info` reports how much of the stored rate is padding**, and the information
-  rate it implies. This is where a new camera or frame rate shows itself.
-- **An Osmo clip joins the pinned detection tables.** It needed no new support —
-  a `CAM meta` handler reaching the same `wm169` path — and it is the first
-  measured clip to come back `upstream`, so that verdict is now pinned against
-  real footage rather than a synthetic noise floor. See FINDINGS.
+- **The report described a duplicate share the detector no longer used.** The
+  0.4 boundary was written down twice and only the detector's copy moved, so a
+  48 or 50 fps clip would have been collapsed without the report mentioning it.
+  There is one definition now.
 
 ## [0.11.0] — 2026-09-03
 

@@ -47,6 +47,7 @@ func analyze(path string, opts *options, intervals []interval) (*analysis, error
 			Variant:         string(source.Variant),
 			VariantDetected: string(source.VariantDetected),
 			VariantOverride: override != "",
+			Camera:          cameraIdentity(source),
 			DurationSeconds: source.DurationSeconds(),
 			SampleCount:     source.Track.SampleCount(),
 			Timescale:       source.Track.Timescale,
@@ -787,4 +788,17 @@ func paramsMap(params detect.Params, opts *options) map[string]any {
 		"strength":           opts.strength,
 		"smoothing_ms":       opts.smoothingMS,
 	}
+}
+
+// cameraIdentity copies what the stream says about its camera into the report,
+// with the serial removed. A scan report is meant to be shareable, and the
+// serial identifies the owner's individual unit rather than the model and
+// firmware that a comparison between reports actually turns on.
+func cameraIdentity(source *pipeline.Source) *djiproto.Identity {
+	identity := source.Identity
+	identity.Serial = ""
+	if identity.Model == "" && identity.Schema == "" && identity.Firmware == "" {
+		return nil
+	}
+	return &identity
 }

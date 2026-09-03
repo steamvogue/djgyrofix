@@ -1,3 +1,4 @@
+camera     DJI O4P  fw 01.00.07.00  DJI FC8885  dvtm_O4P.proto
 clip       227.778 s  13653 samples  455517 quaternions @ 1978.0 Hz  duplicates 50.0%
 baseline   2.0 dps  threshold 60.0 dps (rolling)
 noise      p10 1.9  p50 2.0  p90 2.8 dps  noisy 0.0% (0.00 s) at >= 45.0 dps

@@ -213,14 +213,39 @@ func messagesAtPath(data []byte, start, end int, path []int) ([]span, error) {
 	return spans, nil
 }
 
-// DetectVariant sniffs the layout from the first few samples. This is a
-// heuristic on purpose — the schema is not public — so `info` prints the guess
-// and `--variant` overrides it.
-func DetectVariant(firstSamples [][]byte) Variant {
+// schemaVariants maps DJI's own protobuf definition name to the layout that
+// reads it. The stream names its schema in field 1.1.1, which is the closest
+// thing to a declared format version it carries.
+//
+// Only what has been seen is listed. An unmatched schema is reported as
+// unrecognised rather than mapped by resemblance: "dvtm_O4P.proto" and
+// "dvtm_O4.proto" happen to share a layout, and guessing that any future
+// dvtm_* does too is the kind of assumption that produces silent nonsense.
+var schemaVariants = map[string]Variant{
+	"dvtm_o4.proto":    VariantWM169,
+	"dvtm_o4p.proto":   VariantWM169,
+	"dvtm_ow001.proto": VariantWM169,
+}
+
+// DetectVariant sniffs the layout from the first few samples, and reports
+// whether it actually recognised the stream or fell back to the default.
+//
+// The schema name is tried first because it is the camera's own statement of
+// its format. The substring probe beneath it is the original heuristic, carried
+// over from the Python reference; it has never matched on any real clip
+// measured here — all three name their schema instead and would otherwise have
+// reached the default by luck. That is why the second return value exists:
+// falling through has to be visible rather than silent.
+func DetectVariant(firstSamples [][]byte) (Variant, bool) {
 	var probe strings.Builder
 	for index, sample := range firstSamples {
 		if index >= 5 {
 			break
+		}
+		if identity := ReadIdentity(sample); identity.Schema != "" {
+			if variant, ok := schemaVariants[strings.ToLower(identity.Schema)]; ok {
+				return variant, true
+			}
 		}
 		if len(sample) > 1024 {
 			sample = sample[:1024]
@@ -229,12 +254,15 @@ func DetectVariant(firstSamples [][]byte) Variant {
 	}
 	lower := strings.ToLower(probe.String())
 	if strings.Contains(lower, "oq101") {
-		return VariantOQ101
+		return VariantOQ101, true
 	}
 	if strings.Contains(lower, "wa530") {
-		return VariantWA530
+		return VariantWA530, true
 	}
-	return VariantWM169
+	if strings.Contains(lower, "wm169") {
+		return VariantWM169, true
+	}
+	return VariantWM169, false
 }
 
 // Quaternions returns every quaternion in a sample, in wire order, together
@@ -302,3 +330,102 @@ func WriteQuaternion(data []byte, ref Ref, values quat.Q, tolerance float64) err
 // DefaultTolerance is the magnitude below which a missing component slot is
 // considered unchanged.
 const DefaultTolerance = 1e-7
+
+// Identity is what a metadata sample says about the camera that wrote it.
+//
+// None of this is needed to patch a file. It is here because the open question
+// about the O4 stabilization fault is which units and which firmware are
+// affected, and nobody can correlate reports without these fields — public
+// reports carry footage but not the trace or the camera behind it.
+//
+// Field numbers were read off three cameras and are not guaranteed beyond them,
+// so every field is optional and an absent one stays empty rather than guessing.
+type Identity struct {
+	// Schema is the name of DJI's own protobuf definition, e.g.
+	// "dvtm_O4P.proto". It is the closest thing to a declared format version in
+	// the stream and a far better layout signal than sniffing a model string.
+	Schema string `json:"schema,omitempty"`
+	// Model is the camera as it names itself, e.g. "DJI O4P".
+	Model string `json:"model,omitempty"`
+	// Firmware varies per unit where the two version strings beside it track the
+	// metadata format instead, which is the reading behind the name. Treat it as
+	// a correlation key rather than an authoritative version.
+	Firmware string `json:"firmware,omitempty"`
+	// Serial identifies the individual unit. It is read but never printed
+	// unless asked for: it is personal to the owner of the camera.
+	Serial string `json:"serial,omitempty"`
+	// Aircraft is the airframe model where one is recorded, e.g. "DJI FC8885".
+	Aircraft string `json:"aircraft,omitempty"`
+	// FormatVersions are the remaining version strings, kept because they are
+	// what would distinguish a schema change within one model.
+	FormatVersions []string `json:"format_versions,omitempty"`
+}
+
+// identityPaths maps a field path to the Identity member it fills.
+var identityPaths = []struct {
+	path   []int
+	assign func(*Identity, string)
+}{
+	{[]int{1, 1, 1}, func(id *Identity, value string) { id.Schema = value }},
+	{[]int{1, 1, 10}, func(id *Identity, value string) { id.Model = value }},
+	{[]int{1, 1, 6}, func(id *Identity, value string) { id.Firmware = value }},
+	{[]int{1, 1, 5}, func(id *Identity, value string) { id.Serial = value }},
+	{[]int{2, 2, 1, 4}, func(id *Identity, value string) { id.Aircraft = value }},
+	{[]int{3, 2, 1, 4}, func(id *Identity, value string) {
+		if id.Aircraft == "" {
+			id.Aircraft = value
+		}
+	}},
+	{[]int{1, 1, 2}, func(id *Identity, value string) { id.FormatVersions = append(id.FormatVersions, value) }},
+	{[]int{1, 1, 3}, func(id *Identity, value string) { id.FormatVersions = append(id.FormatVersions, value) }},
+}
+
+// ReadIdentity extracts what a sample says about its camera. Fields it cannot
+// find or that do not hold plain text are left empty.
+func ReadIdentity(sample []byte) Identity {
+	var identity Identity
+	for _, entry := range identityPaths {
+		if value, ok := textAt(sample, entry.path); ok {
+			entry.assign(&identity, value)
+		}
+	}
+	return identity
+}
+
+// textAt walks a field path and returns the payload when it is printable text.
+func textAt(data []byte, path []int) (string, bool) {
+	start, end := 0, len(data)
+	for index, number := range path {
+		fields, err := Fields(data, start, end)
+		if err != nil {
+			return "", false
+		}
+		found := false
+		for _, field := range fields {
+			if field.Number != number || field.WireType != 2 {
+				continue
+			}
+			start, end, found = field.PayloadStart, field.PayloadEnd, true
+			break
+		}
+		if !found {
+			return "", false
+		}
+		if index == len(path)-1 {
+			return printableText(data[start:end])
+		}
+	}
+	return "", false
+}
+
+func printableText(payload []byte) (string, bool) {
+	if len(payload) == 0 || len(payload) > 64 {
+		return "", false
+	}
+	for _, character := range payload {
+		if character < 0x20 || character > 0x7e {
+			return "", false
+		}
+	}
+	return strings.TrimSpace(string(payload)), true
+}
