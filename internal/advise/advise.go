@@ -236,6 +236,18 @@ func patch(in Input, actionable int) Advice {
 	return advice
 }
 
+// unrepresentableDPS is the rms above-frame-Nyquist rotation above which
+// stabilization is adding back more jitter than it removes.
+//
+// Four clips: the one whose owner calls it normal sits at 6.1 °/s, and the three
+// reported as jerking or visibly vibrating at 16.4, 23.1 and 64.7. Placed to
+// separate them, on four points, and wanting a corpus like everything else here.
+const unrepresentableDPS = 10.0
+
+func unrepresentable(in Input) bool {
+	return in.Kinetics.FrameNyquistHz > 0 && in.Kinetics.AboveFrameNyquistDPS >= unrepresentableDPS
+}
+
 // kineticsDominateFraction is the share of a clip past the skew threshold above
 // which rolling shutter and motion blur are the larger problem.
 //
@@ -281,15 +293,31 @@ func tuning(in Input, actionable int, verdict Verdict) []Suggestion {
 	// gets worse the harder it is corrected. Measured on the clip that prompted
 	// this: a clean 6.7 deg/s residual floor, and a tenth of the footage past
 	// the skew threshold.
+	// Motion faster than half the frame rate cannot be represented in a frame
+	// sequence: it arrives as blur inside each frame rather than as movement
+	// between them. Counter-rotating for it samples a value of essentially
+	// random phase at each frame time and adds that back as jitter. No
+	// event-based correction reaches it, because it is spread across the whole
+	// clip rather than gathered into events — which is why a clip can be
+	// corrected repeatedly, and hard, and still jerk.
+	if unrepresentable(in) {
+		suggestions = append(suggestions, Suggestion{
+			Flags: NoFlag,
+			Why: fmt.Sprintf("%.0f °/s of the recorded motion is faster than the %.0f Hz your frames can "+
+				"represent, so stabilizing re-injects it as jitter; nothing here reaches that, and a "+
+				"low-pass on the stabilizer's own gyro input at about %.0f Hz is what removes it",
+				in.Kinetics.AboveFrameNyquistDPS, in.Kinetics.FrameNyquistHz, in.Kinetics.FrameNyquistHz),
+		})
+	}
 	if kineticsDominate(in) {
-		return []Suggestion{{
+		return append(suggestions, Suggestion{
 			Flags: NoFlag,
 			Why: fmt.Sprintf("%.0f%% of this clip is turning faster than %.0f °/s, where a %.0f ms "+
 				"readout skews the frame about %.1f° internally — neither that nor the motion blur "+
 				"beside it is in the attitude track, so no detector setting reaches them",
 				in.Kinetics.FastFraction*100, in.Kinetics.FastDPS,
 				detect.NominalReadoutSeconds*1000, in.Kinetics.SkewP99Degrees),
-		}}
+		})
 	}
 	if verdict == VerdictReview {
 		if !in.RollingBaseline && in.DurationSeconds > 0 {

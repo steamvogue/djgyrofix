@@ -716,6 +716,68 @@ The 5% threshold that decides this is set from three clips and separates the one
 that behaves this way from the one with genuine artifacts. It is a judgement
 call and wants a corpus.
 
+## The motion the frames cannot carry
+
+Both clips reported as jerking were patched, repeatedly and hard, and neither
+improved. The owner's description of the untouched footage is the clue: the raw
+video shows the problem too, "way less, like micro jitters, not even blur", and
+stabilization makes it worse.
+
+That is not what a metadata artifact does. It is what happens when a stabilizer
+is handed motion the frames cannot represent.
+
+A frame sequence at 59.94 fps can carry motion up to 30 Hz. Anything faster does
+not appear as movement *between* frames at all — it lands inside each frame, as
+softness. But the gyro records it faithfully to 494 Hz, and a stabilizer
+counter-rotates each frame by the orientation at that frame's timestamp. Sampling
+a 200 Hz vibration once per frame gives essentially random phase, so the
+correction adds that amplitude back as frame-to-frame jitter, on top of frames
+that were merely soft. The footage gets worse, and the gyro was right the whole
+time.
+
+Measured as the rms per-axis rotation left above half the frame rate:
+
+| clip | frame Nyquist | above it | implied per-frame jitter | reported |
+|---|---|---|---|---|
+| Osmo | 15.0 Hz | 64.7 °/s | ~1.1° | visible vibration |
+| 0012_D | 30.0 Hz | 23.1 °/s | ~0.4° | jerks, never fixed |
+| RAW | 30.0 Hz | 16.4 °/s | ~0.3° | jerks, never fixed |
+| VILLA2 | 30.0 Hz | 6.1 °/s | ~0.1° | owner calls it normal |
+
+The order matches the reports exactly, and the one clip nobody complains about is
+the one at the bottom.
+
+### Why this tool cannot fix it, structurally
+
+Every correction here is event-based. Detection finds excursions from a local
+trend, and correction touches those and nothing else — around 10% of a clip. The
+above-Nyquist energy is not in the events. It is spread across the whole
+recording, present in the quiet stretches as much as the rough ones, which the
+flat 8–500 Hz spectrum of a quiet window already showed.
+
+So a correction can be applied at any strength, any profile, any repair mode, and
+leave this untouched. It does. That is not a tuning failure and no amount of
+`--sensitivity` reaches it.
+
+What removes it is a low-pass on the attitude track at the frame Nyquist, applied
+to the whole clip rather than to detected events. **Gyroflow already has one**,
+and it is distinct from its smoothing setting: smoothing shapes the *target*
+camera path, while the low-pass filters the *source* data — and it is the source
+that is carrying motion the frames cannot hold. That is one slider, live, on
+footage that needs no patching at all, which makes it the first thing to try and
+strictly better than baking the same operation into the file.
+
+The scan now reports the figure and names the cutoff.
+
+### What this says about the tool
+
+The diagnostic half found the cause on three clips where the repair half could
+not help on any. The repair half is not thereby useless — it is aimed at
+excursions that genuinely are events, and the synthetic fixtures show it removes
+those — but no real clip measured here has yet been improved by it in a way
+anyone could see. That remains the open question, and the honest position is that
+it is unconfirmed rather than disproven.
+
 ## Scope of the evidence
 
 This is three real clips — two O4 air units and one Osmo — plus generated

@@ -190,6 +190,17 @@ type Kinetics struct {
 	FastFraction float64 `json:"fast_fraction"`
 	// FastDPS is the rate that fraction was measured against.
 	FastDPS float64 `json:"fast_dps"`
+	// AboveFrameNyquistDPS is the rms rotation faster than half the video frame
+	// rate. A frame sequence cannot represent motion above that: it lands in the
+	// footage as blur inside each frame rather than as movement between them.
+	// Counter-rotating for it does not remove it — the value sampled at each
+	// frame time has essentially random phase — so it is added back as jitter on
+	// top of frames that were merely soft. It is the figure to set a stabilizer's
+	// low-pass from, and no event-based correction reaches it, because it is
+	// spread across the whole clip rather than gathered into events.
+	AboveFrameNyquistDPS float64 `json:"above_frame_nyquist_dps,omitempty"`
+	// FrameNyquistHz is half the video frame rate, zero when it is unknown.
+	FrameNyquistHz float64 `json:"frame_nyquist_hz,omitempty"`
 	// SkewP99Degrees is the within-frame rolling-shutter skew the p99 rate
 	// implies at NominalReadoutSeconds. It is an order-of-magnitude figure, not
 	// a measurement: real readout is camera-specific and Gyroflow ships a
@@ -208,7 +219,7 @@ const NominalReadoutSeconds = 0.015
 const FastDPS = 5.0 / NominalReadoutSeconds
 
 // kinetics summarises the absolute rotation rate.
-func kinetics(velocities []vec3) Kinetics {
+func kinetics(velocities []vec3, interval, videoFPS float64) Kinetics {
 	if len(velocities) == 0 {
 		return Kinetics{FastDPS: FastDPS}
 	}
@@ -234,5 +245,62 @@ func kinetics(velocities []vec3) Kinetics {
 		FastDPS:      FastDPS,
 	}
 	result.SkewP99Degrees = result.P99DPS * NominalReadoutSeconds
+	if videoFPS > 0 && interval > 0 {
+		result.FrameNyquistHz = videoFPS / 2
+		result.AboveFrameNyquistDPS = aboveFrameNyquist(velocities, 1/interval, result.FrameNyquistHz)
+	}
 	return result
+}
+
+// aboveFrameNyquist is the rms of the per-axis rotation rate left after a
+// zero-phase low-pass at the cutoff. Per-axis rather than by magnitude, so a
+// sign change is not folded into itself and counted as motion.
+func aboveFrameNyquist(velocities []vec3, sampleRate, cutoffHz float64) float64 {
+	if len(velocities) < 8 || cutoffHz <= 0 || sampleRate <= 0 {
+		return 0
+	}
+	radius := int(sampleRate / (2 * cutoffHz))
+	if radius < 1 {
+		radius = 1
+	}
+	total := 0.0
+	for axis := 0; axis < 3; axis++ {
+		series := make([]float64, len(velocities))
+		for index, velocity := range velocities {
+			series[index] = velocity[axis]
+		}
+		smooth := zeroPhaseAverage(series, radius)
+		for index := range series {
+			residual := series[index] - smooth[index]
+			total += residual * residual
+		}
+	}
+	return math.Sqrt(total / float64(len(velocities)*3))
+}
+
+func zeroPhaseAverage(series []float64, radius int) []float64 {
+	out := runningAverage(series, radius)
+	reverseFloats(out)
+	out = runningAverage(out, radius)
+	reverseFloats(out)
+	return out
+}
+
+func runningAverage(series []float64, radius int) []float64 {
+	out := make([]float64, len(series))
+	window := 0.0
+	for index := range series {
+		window += series[index]
+		if index > 2*radius {
+			window -= series[index-2*radius-1]
+		}
+		out[index] = window / math.Min(float64(index+1), float64(2*radius+1))
+	}
+	return out
+}
+
+func reverseFloats(series []float64) {
+	for left, right := 0, len(series)-1; left < right; left, right = left+1, right-1 {
+		series[left], series[right] = series[right], series[left]
+	}
 }

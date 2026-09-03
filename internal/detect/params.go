@@ -79,6 +79,12 @@ type Params struct {
 	BinSeconds float64 `json:"bin_seconds"`
 	// LowpassSeconds is the velocity low-pass radius.
 	LowpassSeconds float64 `json:"lowpass_seconds"`
+	// VideoFPS is the frame rate of the video this attitude track belongs to.
+	// It is not used for detection at all — it is here so the report can say how
+	// much of the recorded motion is faster than the frames can represent, which
+	// is a property of the pair rather than of the track alone. Zero means
+	// unknown and the figure is omitted.
+	VideoFPS float64 `json:"video_fps,omitempty"`
 	// GapSeconds is how long a sub-threshold gap may be without splitting an event.
 	GapSeconds float64 `json:"gap_seconds"`
 	// PadSeconds widens each event on both sides.

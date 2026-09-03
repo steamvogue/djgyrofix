@@ -148,7 +148,7 @@ func Run(points []pipeline.Point, params Params) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	result.Kinetics = kinetics(velocities)
+	result.Kinetics = kinetics(velocities, interval, params.VideoFPS)
 
 	lowpassRadius := quat.PyRound(params.LowpassSeconds / interval)
 	if lowpassRadius < 2 {

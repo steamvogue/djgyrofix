@@ -8,6 +8,16 @@ Notable changes to djgyrofix. The format follows
 
 ### Added
 
+- **Reports name the motion the frames cannot carry, and the cutoff that removes
+  it.** Two clips reported as jerking after every correction turned out to carry
+  16 and 23 °/s of rotation faster than half their frame rate. A frame sequence
+  cannot represent that — it lands as softness inside each frame — but a
+  stabilizer counter-rotates by the orientation at each frame time, samples it at
+  essentially random phase, and adds it back as jitter. No event-based correction
+  reaches it, because it is spread across the clip rather than gathered into
+  events. The scan now measures it and points at a low-pass on the stabilizer's
+  own gyro input, which is the operation that does remove it. See FINDINGS.
+
 - **The verdict now considers how hard the aircraft was turning, not only how
   clean the record is.** A clip with an immaculate 6.7 °/s residual floor was
   called patchable and still jerked after every correction, because a tenth of it

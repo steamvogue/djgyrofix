@@ -14,4 +14,5 @@ events     4 found  4 actionable  0 near-miss  1.495 s affected (4.98%)
 writes     418 quaternions in 105 samples
 residual   100.0% reduced in region  10.0% clip-wide
 verdict    patch
+suggests   (note)
 suggests   --no-bridge

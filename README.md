@@ -69,6 +69,16 @@ something it can trust.
 camera is hard-mounted to a resonating frame, the fix is soft mounting and a
 better tune — not this tool.
 
+**It cannot fix vibration faster than your frame rate, and that is the common
+case.** Your frames can only carry motion up to half the frame rate — 30 Hz at
+60 fps. Faster vibration lands inside each frame as softness, but the gyro
+records it perfectly, and stabilizing counter-rotates by a value sampled at
+random phase and adds it back as jitter. Every correction here is *event*-based
+and this is spread across the whole clip, so no setting reaches it. The scan
+measures it and tells you the cutoff; the fix is your stabilizer's **low-pass
+filter** (in Gyroflow that is a separate setting from smoothing — smoothing
+shapes the target path, the low-pass filters the source data).
+
 It also can't help with rolling-shutter wobble, which isn't in the metadata at
 all. Gyroflow's own rolling-shutter correction handles that.
 

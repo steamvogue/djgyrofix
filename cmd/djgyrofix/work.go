@@ -91,6 +91,7 @@ func analyzeAuto(source *pipeline.Source, opts *options, result *analysis) error
 		return fmt.Errorf("the DJI metadata track holds no readable quaternions for variant %s", source.Variant)
 	}
 
+	params.VideoFPS = pipeline.VideoFPS(source.Tracks)
 	detected, err := detect.Run(points, params)
 	if err != nil {
 		return err
