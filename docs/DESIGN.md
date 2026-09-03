@@ -640,10 +640,14 @@ revert — which the original doesn't have.
 1. **Quaternion rate per camera.** Sample rate drives the box-blur radii and
    window defaults. Measure across `wm169` / `wa530` / `oq101` before fixing
    defaults; `info` should print it.
-2. **Do multiple quaternions per metadata sample carry real sub-sample
-   timing**, or is the original's linear interpolation the best available? If
-   there's a timestamp field in the message, finding it would improve everything
-   downstream.
+2. ~~**Do multiple quaternions per metadata sample carry real sub-sample
+   timing**, or is the original's linear interpolation the best available?~~
+   **Answered: they do not.** Every one of the 1,449,040 quaternion messages
+   across both clips holds four `fixed32` fields and nothing else. Timing is
+   per-sample only, from a microsecond timestamp in the container message, so
+   linear interpolation across the sample is the best available rather than a
+   compromise. The same container carries a sample counter that would identify a
+   dropped metadata sample directly; `info` prints both. See FINDINGS.
 3. **Is `.gcsv` viable as a lossless handoff** (Tier 3), or does the round-trip
    through angular velocity lose too much?
 4. **Threshold calibration** needs a corpus. Collect clips with

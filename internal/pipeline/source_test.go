@@ -239,3 +239,92 @@ func TestReadRangeClampsOutOfBoundsRequests(t *testing.T) {
 		t.Errorf("an empty range returned %v, %v", empty, err)
 	}
 }
+
+// TestMetadataClockReadsDJIsOwnTiming covers the two scalar fields that sit
+// beside the quaternions. The interesting case is the second one: a counter
+// that steps by more than one means metadata samples went missing, which is the
+// only direct evidence of that available — everywhere else it has to be
+// inferred from timestamps.
+func TestMetadataClockReadsDJIsOwnTiming(t *testing.T) {
+	const samples, deltaMicros = 60, 16683
+	tests := []struct {
+		name         string
+		clock        func(int) (uint64, uint64)
+		wantGaps     int
+		wantFirstGap int
+	}{
+		{
+			name: "unbroken",
+			clock: func(index int) (uint64, uint64) {
+				return uint64(1_000_000 + index*deltaMicros), uint64(500 + index)
+			},
+			wantGaps: 0, wantFirstGap: -1,
+		},
+		{
+			name: "a dropped sample in the body",
+			clock: func(index int) (uint64, uint64) {
+				sequence := uint64(500 + index)
+				if index >= 30 {
+					sequence += 7
+				}
+				return uint64(1_000_000 + index*deltaMicros), sequence
+			},
+			wantGaps: 1, wantFirstGap: 30,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path, _ := fixture(t, synth.Options{
+				SampleCount: samples, QuatsPerSample: 4, Timescale: 1000,
+				SampleDeltaTicks: 17, WithVideoTrack: true, SampleClock: test.clock,
+			})
+			source, err := pipeline.Open(path, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer source.Close()
+
+			clock, err := source.ReadMetadataClock()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !clock.Present || clock.Samples != samples {
+				t.Fatalf("clock = %+v, want present with %d samples", clock, samples)
+			}
+			if clock.SequenceGaps != test.wantGaps || clock.FirstGapSample != test.wantFirstGap {
+				t.Errorf("gaps %d at %d, want %d at %d",
+					clock.SequenceGaps, clock.FirstGapSample, test.wantGaps, test.wantFirstGap)
+			}
+			if want := 1e6 / float64(deltaMicros); math.Abs(clock.Rate-want) > 0.01 {
+				t.Errorf("embedded rate %.4f Hz, want %.4f", clock.Rate, want)
+			}
+			// The fixture's decode times run at 17 ms against the embedded
+			// clock's 16.683, so the drift is real and signed.
+			if clock.DriftPercent() <= 0 {
+				t.Errorf("drift %.4f%%, want the embedded clock to lead", clock.DriftPercent())
+			}
+		})
+	}
+}
+
+// TestMetadataClockIsAbsentRatherThanGuessed covers a layout that does not carry
+// the fields. Reporting nothing is the point: the field numbers were confirmed
+// on wm169 only, and a reader that invented a rate from whatever varint it found
+// would be worse than one that stays quiet.
+func TestMetadataClockIsAbsentRatherThanGuessed(t *testing.T) {
+	path, _ := fixture(t, synth.Options{SampleCount: 20, QuatsPerSample: 4})
+	source, err := pipeline.Open(path, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+
+	clock, err := source.ReadMetadataClock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if clock.Present || clock.Rate != 0 || clock.DriftPercent() != 0 {
+		t.Errorf("a fixture without the fields reported a clock: %+v", clock)
+	}
+}

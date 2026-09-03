@@ -39,6 +39,11 @@ type Options struct {
 	// OmitZeroComponents drops exactly-zero components the way proto3 does,
 	// which leaves no byte slot to patch.
 	OmitZeroComponents bool
+	// SampleClock supplies the microsecond timestamp and sample counter DJI
+	// writes beside the quaternions, for fixtures that exercise the reader of
+	// those fields. Nil leaves them out, which is what every other fixture
+	// wants and what a layout that does not carry them looks like.
+	SampleClock func(sampleIndex int) (micros, sequence uint64)
 }
 
 // File is a built synthetic MP4 plus the facts a test needs to check against.
@@ -156,6 +161,23 @@ func buildSample(options Options, path []int, sampleIndex int) ([]byte, [][4]int
 			}
 		}
 		inner = concat(inner, key, length, body)
+	}
+
+	// The timestamp and counter precede the quaternions in DJI's own layout, so
+	// they go in the same place here: inside the container, before the repeats.
+	if options.SampleClock != nil {
+		micros, sequence := options.SampleClock(sampleIndex)
+		header := concat(
+			varint(1<<3|0), varint(micros),
+			varint(2<<3|0), varint(sequence))
+		for subIndex := range offsets {
+			for component := range offsets[subIndex] {
+				if offsets[subIndex][component] >= 0 {
+					offsets[subIndex][component] += len(header)
+				}
+			}
+		}
+		inner = concat(header, inner)
 	}
 
 	// A variant marker so DetectVariant has something to sniff. Field 15 is

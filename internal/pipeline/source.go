@@ -243,3 +243,144 @@ func VideoFPS(tracks []*mp4.Track) float64 {
 	}
 	return 0
 }
+
+// MetadataClock is DJI's own timing for the metadata track, read from the two
+// scalar fields that sit beside the quaternions in their container message.
+//
+// The container carries a microsecond timestamp and a sample counter; the
+// quaternion messages under it carry only their four components, with no
+// per-quaternion timing of any kind. That was established by walking every
+// quaternion message in two O4 clips — 993,523 and 455,517 of them — and
+// finding the same four fixed32 fields and nothing else in each. Sub-sample
+// times are therefore interpolated across the sample because no better source
+// exists, not because interpolating was assumed to be good enough.
+//
+// The counter makes a dropped metadata sample identifiable rather than inferred:
+// it steps by one per sample through the body of both clips. The timestamp gives
+// DJI's own idea of the rate, which is worth having next to the container's,
+// because on one measured clip the two disagree by 0.1%.
+//
+// Field numbers were confirmed on wm169 only. Present is false wherever the
+// fields are missing, which is how a layout that numbers them differently
+// reports rather than inventing a reading.
+type MetadataClock struct {
+	Present bool
+	// Samples is how many samples carried both fields.
+	Samples int
+	// SpanSeconds is the embedded clock's own elapsed time across the track.
+	SpanSeconds float64
+	// Rate is samples per second by the embedded clock.
+	Rate float64
+	// ContainerRate is samples per second by the track's decode times.
+	ContainerRate float64
+	// FirstSequence and LastSequence bound the counter.
+	FirstSequence, LastSequence uint64
+	// SequenceGaps counts steps other than exactly one. Both measured clips
+	// show two, in their final two samples, so a trailing pair is normal and a
+	// gap in the body is not.
+	SequenceGaps int
+	// FirstGapSample is where the first such step happened, or -1.
+	FirstGapSample int
+}
+
+// DriftPercent is how much faster the embedded clock runs than the container.
+func (c MetadataClock) DriftPercent() float64 {
+	if c.ContainerRate <= 0 || c.Rate <= 0 {
+		return 0
+	}
+	return 100 * (c.Rate/c.ContainerRate - 1)
+}
+
+// ReadMetadataClock walks every sample for the container's timestamp and
+// counter. It is a second full pass over the track and is meant for `info`, not
+// for the analysis path.
+func (s *Source) ReadMetadataClock() (MetadataClock, error) {
+	clock := MetadataClock{FirstGapSample: -1}
+	count := s.Track.SampleCount()
+	if count < 2 {
+		return clock, nil
+	}
+	path, ok := s.Variant.Path()
+	if !ok || len(path) < 2 {
+		return clock, nil
+	}
+	var firstStamp, lastStamp, previous uint64
+	for index := 0; index < count; {
+		runEnd, runBytes, err := s.readRun(index, count)
+		if err != nil {
+			return clock, err
+		}
+		base := s.Track.SampleOffsets[index]
+		for sampleIndex := index; sampleIndex < runEnd; sampleIndex++ {
+			start := s.Track.SampleOffsets[sampleIndex] - base
+			sample := runBytes[start : start+s.Track.SampleSizes[sampleIndex]]
+			stamp, sequence, found := containerScalars(sample, path[:len(path)-1])
+			if !found {
+				continue
+			}
+			if clock.Samples == 0 {
+				firstStamp, clock.FirstSequence = stamp, sequence
+			} else if sequence != previous+1 {
+				clock.SequenceGaps++
+				if clock.FirstGapSample < 0 {
+					clock.FirstGapSample = sampleIndex
+				}
+			}
+			previous, lastStamp, clock.LastSequence = sequence, stamp, sequence
+			clock.Samples++
+		}
+		index = runEnd
+	}
+	if clock.Samples < 2 || lastStamp <= firstStamp {
+		return MetadataClock{FirstGapSample: -1}, nil
+	}
+	clock.Present = true
+	clock.SpanSeconds = float64(lastStamp-firstStamp) / 1e6
+	clock.Rate = float64(clock.Samples-1) / clock.SpanSeconds
+	if span := s.Track.SampleTime(count-1) - s.Track.SampleTime(0); span > 0 {
+		clock.ContainerRate = float64(count-1) / span
+	}
+	return clock, nil
+}
+
+// containerScalars reads the timestamp and counter beside the quaternions.
+func containerScalars(sample []byte, path []int) (stamp, sequence uint64, found bool) {
+	start, end := 0, len(sample)
+	for _, number := range path {
+		fields, err := djiproto.Fields(sample, start, end)
+		if err != nil {
+			return 0, 0, false
+		}
+		descended := false
+		for _, field := range fields {
+			if field.Number == number && field.WireType == 2 {
+				start, end, descended = field.PayloadStart, field.PayloadEnd, true
+				break
+			}
+		}
+		if !descended {
+			return 0, 0, false
+		}
+	}
+	fields, err := djiproto.Fields(sample, start, end)
+	if err != nil {
+		return 0, 0, false
+	}
+	var haveStamp, haveSequence bool
+	for _, field := range fields {
+		if field.WireType != 0 {
+			continue
+		}
+		value, err := djiproto.Varint(sample, field.ValueStart, field.ValueEnd)
+		if err != nil {
+			return 0, 0, false
+		}
+		switch field.Number {
+		case 1:
+			stamp, haveStamp = value, true
+		case 2:
+			sequence, haveSequence = value, true
+		}
+	}
+	return stamp, sequence, haveStamp && haveSequence
+}

@@ -422,6 +422,63 @@ other's own test material, and the comparison above rests on one clip.
 
 [gyroflow-glitch]: https://github.com/gyroflow/gyroflow/commit/7ac9d110
 
+## There is no sub-sample timing to find
+
+DESIGN §13.2 asked whether the several quaternions in a metadata sample carry
+real timing, or whether the reference's linear interpolation across the sample
+is the best available. Walking every quaternion message in both clips settles
+it: **993,523 on RAW and 455,517 on VILLA2, and every one has the same shape** —
+fields 1 to 4, all `fixed32`, and nothing else at all.
+
+```
+3.3.2.#1  varint  87429172        <- microsecond timestamp, per sample
+3.3.2.#2  varint  2494            <- sample counter, per sample
+3.3.2.#3  message (20 bytes)      <- quaternion 1 of ~33
+  3.3.2.3.#1  fixed32  +0.558334
+  3.3.2.3.#2  fixed32  -0.094220
+  3.3.2.3.#3  fixed32  +0.053970
+  3.3.2.3.#4  fixed32  +0.822480
+3.3.2.#3[1] message (20 bytes)    <- quaternion 2, byte-identical to 3 …
+```
+
+So interpolating sub-sample times is not a shortcut anyone settled for; it is
+the only thing the data supports. The question is closed rather than open.
+
+The two container scalars are new, and both are worth having. `djgyrofix info`
+now prints them, because they are the first thing worth knowing about footage
+somebody else recorded.
+
+**Field 1 is a microsecond timestamp**, and it does not always agree with the
+container:
+
+| Clip | DJI's clock | Container DTS | Drift |
+|---|---|---|---|
+| RAW | 60.0020 Hz | 59.9401 Hz | +0.103%, +0.513 s over 497 s |
+| VILLA2 | 59.9445 Hz | 59.9401 Hz | +0.007%, +0.017 s over 228 s |
+
+RAW's metadata clock runs at a clean 60 Hz while its container is 59.94 — the
+two disagree by half a second across the flight. This changes nothing about
+detection: a 0.1% rate error scales every angular velocity by 0.1%, which is
+nothing against a 60 °/s threshold, and Gyroflow reads the same container
+timeline this tool does, so reported event times still land where the viewer
+scrubs to. It is recorded because it is a measurable difference between two
+clips from the same manufacturer, and because the clip it appears on is the one
+with the reported artifacts. That may be a coincidence. One clip cannot say.
+
+**Field 2 is a sample counter** that steps by exactly one, without exception,
+through the entire body of both clips. That makes a dropped metadata sample
+*identifiable* rather than inferred — everywhere else in this tool a drop has to
+be guessed at from timestamps, which is the guess §5.3's plausibility gate was
+tightened over twice. Both clips end with the same two-step oddity in their
+final two samples (`…297 → …299 → …299`), so a disturbed trailing pair is normal
+and a gap in the body would not be.
+
+Nothing in detection uses the counter yet. There is no footage here with a real
+drop in it, and adding a detection path that no available clip exercises would
+be a guess dressed as a feature. It is surfaced in `info` so that incoming
+footage is checked for one, and it is written down here so the option is not
+rediscovered.
+
 ## Scope of the evidence
 
 This is two real clips plus generated fixtures designed to isolate clean

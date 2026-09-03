@@ -84,6 +84,14 @@ func (v Variant) Path() ([]int, bool) {
 	return path, ok
 }
 
+// Varint decodes the value of a wire-type-0 field located by Fields. It is
+// exported for callers that read scalar fields the quaternion path walks past,
+// such as the metadata track's own timestamp and sample counter.
+func Varint(data []byte, position, end int) (uint64, error) {
+	value, _, err := readVarint(data, position, end)
+	return value, err
+}
+
 func readVarint(data []byte, position, end int) (uint64, int, error) {
 	var value uint64
 	shift := uint(0)

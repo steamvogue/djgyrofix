@@ -117,6 +117,28 @@ func infoOne(path string, override djiproto.Variant, allVariants bool) error {
 		fmt.Printf("  video:     %.3f fps\n", fps)
 	}
 
+	// DJI's own clock, printed beside the container's. On contributed footage
+	// this is the first place a dropped metadata sample or an odd clock would
+	// show, and neither is visible anywhere else.
+	clock, err := source.ReadMetadataClock()
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	if clock.Present {
+		fmt.Printf("\n  dji clock: %.4f Hz over %.3f s (container says %.4f Hz, %+.4f%%)\n",
+			clock.Rate, clock.SpanSeconds, clock.ContainerRate, clock.DriftPercent())
+		fmt.Printf("  counter:   %d to %d", clock.FirstSequence, clock.LastSequence)
+		switch {
+		case clock.SequenceGaps == 0:
+			fmt.Printf(", unbroken\n")
+		case clock.FirstGapSample >= source.Track.SampleCount()-2:
+			fmt.Printf(", %d step(s) other than one, in the trailing samples only\n", clock.SequenceGaps)
+		default:
+			fmt.Printf(", %d step(s) other than one, first at sample %d — metadata samples are missing\n",
+				clock.SequenceGaps, clock.FirstGapSample)
+		}
+	}
+
 	if allVariants {
 		fmt.Printf("\n  what each variant path finds in the first 200 samples:\n")
 		limit := 200

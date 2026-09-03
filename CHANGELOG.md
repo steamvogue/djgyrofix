@@ -8,6 +8,11 @@ Notable changes to djgyrofix. The format follows
 
 ### Changed
 
+- **DESIGN §13.2 is answered: there is no sub-sample timing in DJI's schema.**
+  Every one of the 1,449,040 quaternion messages across both real clips holds
+  four `fixed32` fields and nothing else. Interpolating times across a sample is
+  therefore the best available rather than a compromise, which was previously an
+  assumption. See FINDINGS.
 - **The residual-region warning no longer reads as work outstanding, and no
   longer asks for more correction on its own.** Sweeping the bounded correction
   from one pass to eight showed the count of regions still tripping the detector
@@ -21,6 +26,14 @@ Notable changes to djgyrofix. The format follows
 
 ### Added
 
+- **`info` now prints DJI's own clock and sample counter.** The metadata
+  container carries a microsecond timestamp and a counter that steps by one per
+  sample, neither of which was being read. The counter identifies a dropped
+  metadata sample directly rather than inferring it from timestamps, and the
+  timestamp gives DJI's idea of the rate next to the container's — on one
+  measured clip the two disagree by 0.1%, half a second across the flight. This
+  is diagnostic only; nothing in detection uses the counter, because no clip here
+  contains a real drop to test against.
 - **Corpus scoring, ready before the footage.** `TestCorpusLabelFiles` reads
   reviewer labels from `testdata/corpus/<clip>.labels.csv` and reports precision
   and recall per profile, so a clip can be scored the day it arrives; label files
