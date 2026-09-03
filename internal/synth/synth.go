@@ -167,9 +167,7 @@ func buildSample(options Options, path []int, sampleIndex int) ([]byte, [][4]int
 	// they go in the same place here: inside the container, before the repeats.
 	if options.SampleClock != nil {
 		micros, sequence := options.SampleClock(sampleIndex)
-		header := concat(
-			varint(1<<3|0), varint(micros),
-			varint(2<<3|0), varint(sequence))
+		header := concat(varintField(1, micros), varintField(2, sequence))
 		for subIndex := range offsets {
 			for component := range offsets[subIndex] {
 				if offsets[subIndex][component] >= 0 {
@@ -294,6 +292,13 @@ func box(name string, payload []byte) []byte {
 	out = append(out, be32(uint32(8+len(payload)))...)
 	out = append(out, name...)
 	return append(out, payload...)
+}
+
+// varintField encodes one wire-type-0 field. Wire type zero contributes nothing
+// to the key, so unlike the length-delimited and fixed32 encodings there is no
+// tag to OR in.
+func varintField(fieldNumber int, value uint64) []byte {
+	return concat(varint(uint64(fieldNumber)<<3), varint(value))
 }
 
 func lengthDelimited(fieldNumber int, payload []byte) []byte {
