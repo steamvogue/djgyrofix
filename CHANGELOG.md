@@ -6,6 +6,17 @@ Notable changes to djgyrofix. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **The documentation now says what four real clips showed, including that the
+  repair has not visibly improved any of them.** The README led with a promise to
+  repair footage; it now leads with measuring why footage is bad and repairing
+  the one cause that is in the metadata, carries the state of the evidence at the
+  top, and summarises what each measured clip turned out to suffer from. The
+  repair is unchanged and stays: it is safe, reversible, and does what it claims
+  on defects that genuinely are events. It is no longer presented as the reason
+  to use the tool.
+
 ### Added
 
 - **A clip whose frames cannot carry its motion now leads with the low-pass, not

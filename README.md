@@ -7,7 +7,17 @@
 [![License: GPL v3](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 
 **Your DJI footage looks fine until Gyroflow stabilizes it, and then it shakes.
-This repairs the gyro data so it doesn't.**
+This measures why, and repairs the one cause that lives in the metadata.**
+
+> **Where this stands, honestly.** Across four real clips the diagnosis has held
+> up every time, including predicting which clip a gyro low-pass would help and
+> which it would not. The **repair has not yet visibly improved any real clip**.
+> It removes the artifacts it targets in synthetic tests, but on measured footage
+> the dominant causes turned out to be motion faster than the frames can carry,
+> and rolling-shutter skew — neither of which is in the metadata, and neither of
+> which any setting here reaches. Read [What it can't do](#what-it-cant-do)
+> before you patch anything. On three of four measured clips the scan itself now
+> recommends something other than patching.
 
 [**Download →**](https://github.com/steamvogue/djgyrofix/releases/latest)
 · [Command reference](docs/USAGE.md)
@@ -60,8 +70,15 @@ violent than the motion it was meant to remove. The stabilized clip looks worse
 than the original not because stabilization failed, but because it succeeded
 against bad input.
 
-djgyrofix repairs those artifacts in the metadata, in place, and hands Gyroflow
-something it can trust.
+djgyrofix finds those artifacts and repairs them in the metadata, in place.
+
+That is the theory the tool was built on, and it is worth being precise about how
+much of it has held up. The artifacts are real and measurable — dropouts, corrupt
+samples, transient excursions — and correction removes them. What has **not** been
+shown is that they are the main thing spoiling real footage. On every clip
+measured so far, larger effects were found beside them that live outside the
+metadata entirely. See [What it can't do](#what-it-cant-do) and the
+[measured findings](docs/FINDINGS.md).
 
 ## What it can't do
 
@@ -305,6 +322,28 @@ detected events, none of them corrupt, so there is nothing for a bridge to
 repair. That is one clip, and the comparison is
 [written up with the numbers](docs/FINDINGS.md). If Gyroflow's slider fixes your
 footage, use it and skip this entirely.
+
+## What four real clips actually showed
+
+Every clip measured is in [docs/FINDINGS.md](docs/FINDINGS.md) with its numbers.
+The short version:
+
+| clip | what the metadata looked like | what was actually wrong |
+|---|---|---|
+| O4, artifacts reported | 3.4 °/s floor, 81 events | 16 °/s above frame Nyquist; a 30 Hz low-pass helps, patching did not |
+| O4, jerks after any fix | **6.7 °/s floor — the cleanest measured** | 10% of it flown past 333 °/s, ~13° rolling-shutter skew per frame |
+| Osmo Nano, visible vibration | 113.7 °/s floor | mount resonance at 9 Hz and ~465 Hz; verdict `upstream`, correctly |
+| O4 Pro, owner calls it normal | 2.0 °/s floor, 1 event | nothing; the one clip that leads with a patch |
+
+Three lessons the tool now encodes:
+
+- **A clean metadata track does not mean a clip will stabilize well.** The
+  cleanest track measured is on the clip that jerks worst.
+- **Motion faster than half your frame rate is the common problem**, and it is
+  not repairable here — every correction in this tool is event-based, and that
+  energy is spread across the whole clip.
+- **Correcting harder makes those clips worse**, because the effect is spent
+  smoothing real motion. The scan now refuses to suggest it.
 
 ## How honest is this?
 

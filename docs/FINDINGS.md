@@ -778,6 +778,42 @@ those — but no real clip measured here has yet been improved by it in a way
 anyone could see. That remains the open question, and the honest position is that
 it is unconfirmed rather than disproven.
 
+## Where this leaves the repair
+
+Four real clips have been measured and none has been visibly improved by
+correction. That is the honest headline and it should not be buried under the
+sections above.
+
+What is established:
+
+- The artifacts the detector finds are real. Synthetic fixtures with injected
+  defects of known kind and time are found, classified and removed, and a
+  whip-pan is left alone.
+- The correction is safe. Bytes outside the journal are untouched, revert is
+  bit-exact, and no correction may leave a larger orientation step than the
+  source had.
+- The diagnosis is right. On four clips it identified the dominant cause each
+  time, including predicting which clip a 30 Hz low-pass would help — it helped
+  the one at 2.2% fast flight and did nothing for the one at 10%, exactly as the
+  rolling-shutter figures said it would.
+
+What is not established, and now looks unlikely on the evidence:
+
+- That the artifacts the detector finds are what spoils real footage. On every
+  clip measured, a larger effect was found beside them that lives outside the
+  metadata: motion above the frame Nyquist, or rolling-shutter skew, or a mount
+  resonance. Correction reaches none of those.
+
+One test would settle it and has not been run: the same clip, low-pass on,
+patched against unpatched. Until then the position is unproven rather than
+disproven — but three of four clips now lead with advice pointing away from
+patching, and that is the tool's own reading of its own measurements.
+
+The repair is left in place. It is safe, it is reversible, it does what it claims
+on defects that genuinely are events, and removing it would discard the parity
+gate that validates the numeric core. It is no longer presented as the reason to
+use the tool.
+
 ## Scope of the evidence
 
 This is three real clips — two O4 air units and one Osmo — plus generated
