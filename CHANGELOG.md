@@ -6,6 +6,8 @@ Notable changes to djgyrofix. The format follows
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-09-03
+
 ### Changed
 
 - **The documentation now says what four real clips showed, including that the
@@ -666,7 +668,8 @@ byte-for-byte output parity against it in manual-range mode.
 - Writing a full copy of the video for every edit. `--out` keeps that behaviour
   where it is wanted.
 
-[Unreleased]: https://github.com/steamvogue/djgyrofix/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/steamvogue/djgyrofix/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/steamvogue/djgyrofix/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/steamvogue/djgyrofix/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/steamvogue/djgyrofix/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/steamvogue/djgyrofix/compare/v0.9.1...v0.10.0
